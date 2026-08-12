@@ -12,6 +12,11 @@ function authEmailFromUsername(username: string) {
   return `${username.trim().toLowerCase()}@users.708.local`;
 }
 
+function authEmailFromLogin(identifier: string) {
+  const normalized = identifier.trim().toLowerCase();
+  return normalized.includes("@") ? normalized : authEmailFromUsername(normalized);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -26,7 +31,7 @@ export default function LoginPage() {
     const supabase = createClient();
 
     if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email: authEmailFromUsername(values.username), password: values.password });
+      const { error } = await supabase.auth.signInWithPassword({ email: authEmailFromLogin(values.username), password: values.password });
       if (error) {
         setMessageType("error");
         setMessage(error.message === "Invalid login credentials" ? "Email hoặc mật khẩu chưa đúng." : error.message);
@@ -111,8 +116,14 @@ export default function LoginPage() {
             {message && <Alert className="auth-alert" showIcon type={messageType} title={message} />}
 
             <Form form={form} layout="vertical" onFinish={submit} requiredMark={false} size="large">
-              <Form.Item name="username" label="Tên tài khoản" rules={[{ required: true, message: "Nhập tên tài khoản" }, { pattern: /^[a-zA-Z0-9._-]{3,32}$/, message: "Dùng 3–32 ký tự không dấu: chữ, số, dấu chấm, gạch ngang hoặc gạch dưới" }]}>
-                <Input prefix={<UserOutlined />} autoComplete="username" placeholder="nguyenvanan" />
+              <Form.Item
+                name="username"
+                label={mode === "login" ? "Tên tài khoản hoặc email" : "Tên tài khoản"}
+                rules={mode === "login"
+                  ? [{ required: true, message: "Nhập tên tài khoản hoặc email" }]
+                  : [{ required: true, message: "Nhập tên tài khoản" }, { pattern: /^[a-zA-Z0-9._-]{3,32}$/, message: "Dùng 3–32 ký tự không dấu: chữ, số, dấu chấm, gạch ngang hoặc gạch dưới" }]}
+              >
+                <Input prefix={<UserOutlined />} autoComplete="username" placeholder={mode === "login" ? "Tên tài khoản hoặc email" : "nguyenvanan"} />
               </Form.Item>
               {mode === "signup" && <Form.Item name="email" label="Email liên hệ (không bắt buộc)" rules={[{ type: "email", message: "Email chưa đúng định dạng" }]}>
                 <Input prefix={<MailOutlined />} autoComplete="email" placeholder="ban@email.com" />
