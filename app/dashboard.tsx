@@ -39,11 +39,12 @@ import {
   MenuOutlined,
   PlusOutlined,
   ThunderboltOutlined,
+  TeamOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
-import { ExpensesView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
+import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 
 type RoomStatus = "vacant" | "occupied" | "leaving" | "maintenance";
 type Room = { id: string; code: string; tenant: string | null; rent: number; due: number; status: RoomStatus; invoice_id: string | null };
@@ -61,6 +62,8 @@ const menuItems = [
   { key: "Báo cáo", icon: <FileTextOutlined />, label: "Báo cáo" },
 ];
 
+const memberMenuItem = { key: "Quản lý thành viên", icon: <TeamOutlined />, label: "Quản lý thành viên" };
+
 export default function Dashboard({ userEmail, userName }: { userEmail: string; userName: string }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("Tổng quan");
@@ -76,6 +79,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   const [saving, setSaving] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [organizationUsers, setOrganizationUsers] = useState<OrganizationUser[]>([]);
+  const [currentRole, setCurrentRole] = useState<"admin" | "member">("member");
   const screens = Grid.useBreakpoint();
 
   const loadDashboard = useCallback(async () => {
@@ -84,7 +88,9 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     const supabase = createClient();
     const { error: setupError } = await supabase.rpc("bootstrap_current_user");
     if (setupError) {
-      setError("Chưa thể khởi tạo dữ liệu. Hãy chạy migration 0002_dashboard_functions.sql trong Supabase.");
+      setError(setupError.message.includes("access was removed")
+        ? "Quyền truy cập của tài khoản này đã bị quản trị viên thu hồi."
+        : "Chưa thể khởi tạo dữ liệu. Hãy chạy lần lượt các migration từ 0002 đến 0008 trong Supabase.");
       setLoading(false);
       return;
     }
@@ -92,16 +98,31 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     if (dataError || !result) setError("Không tải được số liệu. Vui lòng thử lại.");
     else setData(result as DashboardData);
 
-    const { data: users } = await supabase.rpc("get_organization_users");
+    const { data: membership } = await supabase.rpc("get_current_membership");
+    const role = (membership as { role?: string } | null)?.role;
+    const normalizedRole = role === "admin" ? "admin" : "member";
+    const { data: users, error: usersError } = await supabase.rpc(normalizedRole === "admin" ? "get_manageable_members" : "get_organization_users");
+    if (usersError) {
+      setError(`Không tải được danh sách thành viên: ${usersError.message}`);
+      setOrganizationUsers([]);
+    }
     if (Array.isArray(users)) {
-      const uniqueUsers = Array.from(new Map((users as OrganizationUser[]).map((user) => [user.user_id || user.email, user])).values());
+      const uniqueUsers = Array.from(new Map((users as OrganizationUser[]).map((user) => [user.user_id || user.email, {
+        ...user,
+        role: user.role ?? "member",
+        phone: user.phone ?? "",
+        bank_account: user.bank_account ?? "",
+        bank_name: user.bank_name ?? "",
+      }])).values());
       setOrganizationUsers(uniqueUsers);
     }
+    setCurrentRole(normalizedRole);
     setLoading(false);
   }, []);
 
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => { if (screens.lg) setMobileMenuOpen(false); }, [screens.lg]);
+  useEffect(() => { if (currentRole !== "admin" && activeTab === "Quản lý thành viên") setActiveTab("Tổng quan"); }, [activeTab, currentRole]);
 
   const debt = useMemo(() => data.rooms.reduce((sum, room) => sum + Number(room.due), 0), [data.rooms]);
   const occupied = data.rooms.filter((room) => room.status !== "vacant").length;
@@ -109,7 +130,8 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   const debtorRooms = data.rooms.filter((room) => room.due > 0 && room.invoice_id);
   const displayName = userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
-  const periodLabel = activeTab.startsWith("Chi phí") ? "KỲ THÁNG 05, 2026" : month.toUpperCase();
+  const periodLabel = activeTab.startsWith("Chi phí") ? `KỲ ${month.toUpperCase()}` : month.toUpperCase();
+  const visibleMenuItems = currentRole === "admin" ? [...menuItems, memberMenuItem] : menuItems;
 
   function parseMoney(value: string) { return Number(value.replace(/[^0-9]/g, "")); }
 
@@ -174,7 +196,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     <Menu
       mode="inline"
       selectedKeys={[activeTab]}
-      items={menuItems}
+      items={visibleMenuItems}
       onClick={({ key }) => chooseTab(key)}
       className="main-menu"
     />
@@ -198,6 +220,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
             <Avatar style={{ background: "#dff3ea", color: "#087a58", fontWeight: 800 }}>{initials}</Avatar>
             <div className="account-copy">
               <Typography.Text strong>{displayName}</Typography.Text>
+              <Tag variant="filled" color={currentRole === "admin" ? "success" : "default"}>{currentRole === "admin" ? "Quản trị viên" : "Thành viên"}</Tag>
               <Typography.Text type="secondary">{userEmail}</Typography.Text>
             </div>
           </Flex>
@@ -224,6 +247,9 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
               <div>
                 <Typography.Text className="period-label">{periodLabel}</Typography.Text>
                 <Typography.Title level={2}>{activeTab}</Typography.Title>
+                <Typography.Text className="page-subtitle">
+                  {activeTab === "Tổng quan" ? "Theo dõi vận hành và tài chính tại một nơi" : data.property_name}
+                </Typography.Text>
               </div>
             </Flex>
             <Space className="header-actions">
@@ -248,10 +274,11 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
               onNotice={setNotice}
             />
           )}
-          {activeTab === "Phòng" && <RoomsView onNotice={setNotice} />}
-          {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} />}
-          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} />}
-          {activeTab === "Báo cáo" && <ReportView />}
+          {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Quản lý thành viên" && currentRole === "admin" && <MembersView users={organizationUsers} currentUserEmail={userEmail} onNotice={setNotice} onChanged={() => void loadDashboard()} />}
         </Layout.Content>
       </Layout>
 
@@ -310,14 +337,40 @@ function Overview({
   onAddRoom: () => void;
   onNotice: (message: string) => void;
 }) {
+  const netCashflow = data.revenue - data.expenses;
+
   return (
-    <div className="page-stack">
+    <div className="page-stack overview-page">
+      <section className="overview-hero">
+        <div className="overview-hero-copy">
+          <span className="hero-eyebrow">BỨC TRANH THÁNG NÀY</span>
+          <Typography.Title level={3}>Quản lý nhà trọ nhẹ nhàng hơn mỗi ngày.</Typography.Title>
+          <Typography.Paragraph>
+            Nắm nhanh tiền thu, công nợ và tình trạng phòng của <strong>{data.property_name || "708 La Thành"}</strong>.
+          </Typography.Paragraph>
+          <Flex gap={10} wrap className="hero-status-list">
+            <span><i className="status-dot online" /> Dữ liệu đang đồng bộ</span>
+            <span>{data.rooms.length} phòng đang quản lý</span>
+          </Flex>
+        </div>
+        <div className="hero-balance-card">
+          <span className="hero-balance-label">DÒNG TIỀN RÒNG</span>
+          <strong>{loading ? "—" : money.format(netCashflow)}</strong>
+          <span className={`hero-balance-note ${netCashflow < 0 ? "negative" : ""}`}>
+            {netCashflow < 0 ? "Chi đang cao hơn thu" : "Thu trừ chi phí trong tháng"}
+          </span>
+          <div className="hero-balance-decoration" aria-hidden="true">
+            <span /><span /><span /><span /><span />
+          </div>
+        </div>
+      </section>
+
       <Row gutter={[16, 16]}>
         <MetricCard loading={loading} title="Doanh thu tháng này" value={data.revenue} note="Thanh toán đã ghi nhận" icon={<BankOutlined />} tone="green" />
         <MetricCard loading={loading} title="Cần thu" value={debt} note={`${debtorRooms.length} phòng còn công nợ`} icon={<CreditCardOutlined />} tone="orange" />
         <MetricCard loading={loading} title="Chi phí tháng này" value={data.expenses} note="Tổng chi phí đã ghi nhận" icon={<WalletOutlined />} tone="blue" />
         <Col xs={12} sm={12} xl={6} className="summary-col">
-          <Card className="summary-card">
+          <Card className="summary-card summary-card-purple">
             <Flex justify="space-between" align="flex-start">
               <Statistic title="Tỷ lệ lấp đầy" value={occupancy} suffix="%" />
               <span className="metric-icon purple"><AppstoreOutlined /></span>
@@ -328,6 +381,12 @@ function Overview({
         </Col>
       </Row>
 
+      <div className="overview-section-heading">
+        <div>
+          <Typography.Title level={4}>Thao tác nhanh</Typography.Title>
+          <Typography.Text type="secondary">Những việc thường dùng trong kỳ</Typography.Text>
+        </div>
+      </div>
       <Row gutter={[16, 16]}>
         <QuickAction
           icon={<PlusOutlined />}
@@ -343,7 +402,7 @@ function Overview({
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={15}>
-          <Card title="Tình trạng phòng" extra={<Button type="link" icon={<PlusOutlined />} onClick={onAddRoom}>Thêm phòng</Button>} className="section-card">
+          <Card title={<div><span>Tình trạng phòng</span><Typography.Text type="secondary" className="card-title-note">Cập nhật tình trạng thuê và công nợ</Typography.Text></div>} extra={<Button type="link" icon={<PlusOutlined />} onClick={onAddRoom}>Thêm phòng</Button>} className="section-card room-status-card">
             {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : data.rooms.length ? (
               <div className="overview-room-list">{data.rooms.map((room) => <RoomRow key={room.id} room={room} />)}</div>
             ) : (
@@ -353,7 +412,8 @@ function Overview({
         </Col>
         <Col xs={24} xl={9}>
           <Card title="Dòng tiền tháng này" extra={<Tag color="success">TRỰC TIẾP</Tag>} className="section-card cashflow-card">
-            <Statistic title="Dòng tiền ròng" value={data.revenue - data.expenses} formatter={(value) => money.format(Number(value))} />
+            <Statistic title="Dòng tiền ròng" value={netCashflow} formatter={(value) => money.format(Number(value))} />
+            <Typography.Text className="cashflow-caption" type="secondary">Tổng hợp từ các khoản đã ghi nhận</Typography.Text>
             <Progress
               className="cashflow-progress"
               percent={data.revenue + data.expenses ? Math.round(data.revenue / (data.revenue + data.expenses) * 100) : 0}
@@ -375,7 +435,7 @@ function Overview({
 function MetricCard({ loading, title, value, note, icon, tone }: { loading: boolean; title: string; value: number; note: string; icon: React.ReactNode; tone: string }) {
   return (
     <Col xs={12} sm={12} xl={6} className="summary-col">
-      <Card className="summary-card">
+      <Card className={`summary-card summary-card-${tone}`}>
         <Flex justify="space-between" align="flex-start">
           <Statistic title={title} value={loading ? 0 : value} formatter={(current) => loading ? "—" : money.format(Number(current))} />
           <span className={`metric-icon ${tone}`}>{icon}</span>

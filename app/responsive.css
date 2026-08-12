@@ -79,6 +79,11 @@ body {
   .mobile-drawer .ant-drawer-body {
     padding: 12px;
   }
+
+  .overview-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.48fr);
+    gap: 22px;
+  }
 }
 
 @media (max-width: 767px) {
@@ -161,6 +166,10 @@ body {
     margin-bottom: 12px;
   }
 
+  .page-subtitle {
+    display: none;
+  }
+
   .page-header > .ant-flex {
     min-width: 0;
   }
@@ -184,6 +193,58 @@ body {
     gap: 12px;
   }
 
+  .overview-hero {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    min-height: 0;
+    padding: 22px;
+    border-radius: 18px;
+  }
+
+  .overview-hero::before {
+    right: -80px;
+  }
+
+  .overview-hero h3.ant-typography {
+    margin-bottom: 8px;
+    font-size: 24px;
+    letter-spacing: -0.8px;
+  }
+
+  .overview-hero p.ant-typography {
+    font-size: 11px;
+  }
+
+  .hero-status-list {
+    margin-top: 17px;
+  }
+
+  .hero-balance-card {
+    min-height: 128px;
+    padding: 18px;
+  }
+
+  .hero-balance-card > strong {
+    font-size: 26px;
+  }
+
+  .hero-balance-decoration {
+    position: absolute;
+    right: 18px;
+    bottom: 17px;
+    width: 92px;
+    height: 42px;
+    margin: 0;
+  }
+
+  .overview-section-heading {
+    margin-top: 5px;
+  }
+
+  .overview-section-heading h4.ant-typography {
+    font-size: 15px;
+  }
+
   .page-stack > .ant-row {
     margin-inline: -5px !important;
     row-gap: 10px !important;
@@ -200,6 +261,12 @@ body {
   .summary-card .ant-card-body {
     min-height: 108px;
     padding: 13px;
+  }
+
+  .summary-card::before {
+    inset: 0 0 auto;
+    width: auto;
+    height: 3px;
   }
 
   .summary-card .ant-statistic-title {

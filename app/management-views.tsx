@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import {
   Alert,
@@ -8,19 +8,20 @@ import {
   Button,
   Card,
   Checkbox,
-  Empty,
   Col,
   DatePicker,
   Descriptions,
+  Empty,
   Flex,
   Form,
-  Image,
   Input,
   Modal,
+  Popconfirm,
   Progress,
   Row,
   Segmented,
   Select,
+  Skeleton,
   Space,
   Statistic,
   Table,
@@ -31,625 +32,586 @@ import {
 import {
   BankOutlined,
   CheckCircleFilled,
+  DeleteOutlined,
   EditOutlined,
   HomeOutlined,
   InfoCircleOutlined,
   PlusOutlined,
-  QrcodeOutlined,
   SearchOutlined,
   TeamOutlined,
+  UserAddOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
+import { createClient } from "@/lib/supabase/browser";
 
 const vnd = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const compactVnd = new Intl.NumberFormat("vi-VN", { notation: "compact", style: "currency", currency: "VND", maximumFractionDigits: 1 });
+const currentPeriod = dayjs().startOf("month");
 
-type RentalRoom = {
-  code: string;
-  floor: number;
-  size: string;
-  residents: string[];
-  rent: number;
-  coefficient: number;
+export type OrganizationUser = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: "admin" | "member" | string;
+  phone: string;
+  bank_account: string;
+  bank_name: string;
 };
-
-const roomData: RentalRoom[] = [
-  { code: "P.401", floor: 4, size: "Phòng nhỏ", residents: ["Đức"], rent: 2_440_000, coefficient: 0.855 },
-  { code: "P.402", floor: 4, size: "Phòng to", residents: ["Hải", "Kiên"], rent: 2_710_000, coefficient: 0.95 },
-  { code: "P.301", floor: 3, size: "Phòng nhỏ", residents: ["Trường"], rent: 2_570_000, coefficient: 0.9 },
-  { code: "P.302", floor: 3, size: "Phòng to", residents: ["NA", "Tuấn"], rent: 2_860_000, coefficient: 1 },
-  { code: "P.201", floor: 2, size: "Phòng nhỏ", residents: ["Liên", "Dung"], rent: 2_570_000, coefficient: 0.9 },
-  { code: "P.202", floor: 2, size: "Phòng to", residents: ["Việt", "Phương"], rent: 2_860_000, coefficient: 1 },
-];
-
-export type OrganizationUser = { user_id: string; full_name: string; email: string };
-
-type Expense = {
-  id: number;
-  date: string;
-  name: string;
-  amount: number;
-  payer: string;
-  participants: string[];
-  reference?: string;
-  status: "done" | "pending";
-};
-
-type PersonCost = {
-  name: string;
-  total: number;
-  advanced: number;
-  balance: number;
-  paid: boolean;
-  account: string;
-  bank: string;
-};
-
-const originalExpenses: Expense[] = [
-  { id: 1, date: "05/2026", name: "Tiền điện", amount: 6_007_090, payer: "Hải", participants: ["A Hải", "Kiên", "Dung", "C Liên", "A Thái", "Tuấn", "NA", "A Trường", "Đức"], reference: "PD03000029784", status: "done" },
-  { id: 2, date: "05/2026", name: "Tiền nước", amount: 856_350, payer: "Hải", participants: ["A Hải", "Kiên", "Dung", "C Liên", "A Thái", "Tuấn", "NA", "A Trường", "Đức"], reference: "111252812", status: "done" },
-  { id: 3, date: "08/05/2026", name: "Tiền internet", amount: 380_000, payer: "Hải", participants: ["A Hải", "Kiên", "Dung", "C Liên", "A Thái", "Tuấn", "NA", "A Trường", "Đức"], status: "done" },
-];
-
-const peopleData: PersonCost[] = [
-  { name: "A Hải", total: 804_826.6667, advanced: 7_243_440, balance: -6_438_613.333, paid: true, account: "1041702775", bank: "Vietcombank" },
-  { name: "Kiên", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: false, account: "1065069205", bank: "Vietcombank" },
-  { name: "Dung", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: true, account: "0335390581", bank: "MB Bank" },
-  { name: "C Liên", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: false, account: "1031906128", bank: "Vietcombank" },
-  { name: "A Thái", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: false, account: "", bank: "Chưa cập nhật" },
-  { name: "Tuấn", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: true, account: "0386107787", bank: "MB Bank" },
-  { name: "NA", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: true, account: "1515902", bank: "VPBank" },
-  { name: "A Trường", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: true, account: "9971803568", bank: "Vietcombank" },
-  { name: "Đức", total: 804_826.6667, advanced: 0, balance: 804_826.6667, paid: true, account: "4650581798", bank: "BIDV" },
-];
 
 type NoticeHandler = (message: string) => void;
-type RoomFormValues = { code: string; floor: number; size: string; coefficient: string; residents: string; rent: string };
-function uniqueOrganizationUsers(users: OrganizationUser[]) {
-  const unique = new Map<string, OrganizationUser>();
-  users.forEach((user) => {
-    const key = user.user_id || user.email.toLocaleLowerCase();
-    if (!unique.has(key)) unique.set(key, user);
-  });
-  return Array.from(unique.values());
+type SharedProps = { organizationId: string; propertyId: string; onNotice: NoticeHandler };
+
+type RentalRoom = {
+  id: string;
+  code: string;
+  floor: number;
+  room_type: string;
+  residents: string[];
+  base_rent: number;
+  coefficient: number;
+  status: "vacant" | "occupied" | "leaving" | "maintenance";
+};
+
+type RoomFormValues = {
+  code: string;
+  floor: number;
+  room_type: string;
+  coefficient: string;
+  residents?: string;
+  base_rent: string;
+  status: RentalRoom["status"];
+};
+
+type ExpenseParticipant = { user_id: string; allocated_amount: number };
+type ExpenseRecord = {
+  id: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  payer_user_id: string | null;
+  status: "pending" | "completed";
+  reference_code: string | null;
+  note: string | null;
+  expense_participants: ExpenseParticipant[];
+};
+
+type ExpenseFormValues = {
+  category: string;
+  amount: string;
+  expense_date: Dayjs;
+  payer_user_id: string;
+  participant_ids: string[];
+  status: ExpenseRecord["status"];
+  reference_code?: string;
+  note?: string;
+};
+
+type Settlement = { user_id: string; is_settled: boolean };
+type PersonCost = OrganizationUser & { allocated: number; advanced: number; balance: number; paid: boolean };
+
+function parseMoney(value: string) {
+  return Number(value.replace(/[^0-9]/g, ""));
 }
 
-function expenseMonthKey(date: string) {
-  if (date === "Hôm nay") return dayjs().format("YYYY-MM");
-  const parts = date.split("/");
-  if (parts.length === 2) return `${parts[1]}-${parts[0]}`;
-  if (parts.length === 3) return `${parts[2]}-${parts[1]}`;
-  return "";
+function errorMessage(error: { message?: string } | null, fallback: string) {
+  if (!error?.message) return fallback;
+  if (error.message.includes("duplicate")) return "Dữ liệu này đã tồn tại.";
+  if (error.message.includes("Account not found")) return "Tài khoản chưa tồn tại. Thành viên cần đăng ký trước khi được thêm.";
+  if (error.message.includes("Administrator permission")) return "Bạn không có quyền quản trị viên.";
+  return fallback;
 }
 
-type ExpenseFormValues = { name: string; amount: string; payerId: string; participantIds: string[] };
-
-export function RoomsView({ onNotice }: { onNotice: NoticeHandler }) {
+export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps) {
   const [display, setDisplay] = useState<"Danh sách" | "Sơ đồ tầng">("Danh sách");
-  const [rooms, setRooms] = useState(roomData);
+  const [rooms, setRooms] = useState<RentalRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RentalRoom | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<RoomFormValues>();
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem("708-la-thanh-rooms");
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as RentalRoom[];
-      if (Array.isArray(parsed) && parsed.length) setRooms(parsed);
-    } catch {
-      window.localStorage.removeItem("708-la-thanh-rooms");
-    }
-  }, []);
+  const loadRooms = useCallback(async () => {
+    if (!propertyId) return;
+    setLoading(true);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("id, code, floor, room_type, residents, base_rent, coefficient, status")
+      .eq("property_id", propertyId)
+      .order("floor", { ascending: false })
+      .order("code");
+    if (error) onNotice("Không tải được danh sách phòng. Hãy chạy migration 0006.");
+    setRooms(((data ?? []) as RentalRoom[]).map((room) => ({ ...room, base_rent: Number(room.base_rent), coefficient: Number(room.coefficient), residents: room.residents ?? [] })));
+    setLoading(false);
+  }, [onNotice, propertyId]);
 
-  const totalRent = rooms.reduce((sum, room) => sum + room.rent, 0);
+  useEffect(() => { void loadRooms(); }, [loadRooms]);
+
+  const totalRent = rooms.reduce((sum, room) => sum + room.base_rent, 0);
+  const occupiedRooms = rooms.filter((room) => room.status === "occupied").length;
   const residentCount = rooms.reduce((sum, room) => sum + room.residents.length, 0);
+  const floors = Array.from(new Set(rooms.map((room) => room.floor))).sort((a, b) => b - a);
 
-  function editRoom(room: RentalRoom) {
+  function openCreate() {
+    setEditingRoom(null);
+    form.setFieldsValue({ code: "", floor: 1, room_type: "Phòng tiêu chuẩn", coefficient: "1", residents: "", base_rent: "", status: "vacant" });
+    setModalOpen(true);
+  }
+
+  function openEdit(room: RentalRoom) {
     setEditingRoom(room);
     form.setFieldsValue({
       code: room.code,
       floor: room.floor,
-      size: room.size,
+      room_type: room.room_type,
       coefficient: String(room.coefficient),
       residents: room.residents.join(", "),
-      rent: room.rent.toLocaleString("vi-VN"),
+      base_rent: room.base_rent.toLocaleString("vi-VN"),
+      status: room.status,
     });
+    setModalOpen(true);
   }
 
-  function saveRoom(values: RoomFormValues) {
-    if (!editingRoom) return;
-    const code = values.code.trim().toUpperCase();
-    const residents = values.residents.split(/[,;\n]/).map((name) => name.trim()).filter(Boolean);
-    const rent = Number(values.rent.replace(/[^0-9]/g, ""));
-    const coefficient = Number(values.coefficient.replace(",", "."));
+  async function saveRoom(values: RoomFormValues) {
+    const residents = (values.residents ?? "").split(/[,;\n]/).map((name) => name.trim()).filter(Boolean);
+    const payload = {
+      organization_id: organizationId,
+      property_id: propertyId,
+      code: values.code.trim().toUpperCase(),
+      floor: values.floor,
+      room_type: values.room_type.trim(),
+      coefficient: Number(values.coefficient.replace(",", ".")),
+      residents,
+      base_rent: parseMoney(values.base_rent),
+      status: values.status,
+    };
+    if (!payload.code || !payload.base_rent || !payload.coefficient) return onNotice("Vui lòng nhập đầy đủ thông tin phòng.");
+    setSaving(true);
+    const supabase = createClient();
+    const result = editingRoom
+      ? await supabase.from("rooms").update(payload).eq("id", editingRoom.id)
+      : await supabase.from("rooms").insert(payload);
+    setSaving(false);
+    if (result.error) return onNotice(errorMessage(result.error, "Không thể lưu phòng. Vui lòng kiểm tra lại dữ liệu."));
+    setModalOpen(false);
+    onNotice(editingRoom ? `Đã cập nhật phòng ${payload.code}.` : `Đã thêm phòng ${payload.code}.`);
+    await loadRooms();
+  }
 
-    if (!code || !values.floor || !residents.length || !rent || !coefficient) {
-      onNotice("Vui lòng nhập đủ thông tin phòng và ít nhất một người ở.");
-      return;
-    }
-    if (rooms.some((room) => room.code !== editingRoom.code && room.code === code)) {
-      onNotice("Mã phòng này đã tồn tại.");
-      return;
-    }
-
-    const updated: RentalRoom = { code, floor: values.floor, size: values.size, residents, rent, coefficient };
-    const nextRooms = rooms.map((room) => room.code === editingRoom.code ? updated : room);
-    setRooms(nextRooms);
-    window.localStorage.setItem("708-la-thanh-rooms", JSON.stringify(nextRooms));
-    setEditingRoom(null);
-    onNotice(`Đã cập nhật chi tiết ${code}.`);
+  async function deleteRoom(room: RentalRoom) {
+    const { error } = await createClient().from("rooms").delete().eq("id", room.id);
+    if (error) return onNotice("Không thể xóa phòng đang có hợp đồng hoặc hóa đơn liên quan.");
+    onNotice(`Đã xóa phòng ${room.code}.`);
+    await loadRooms();
   }
 
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng tiền nhà", value: vnd.format(totalRent), note: "Cập nhật theo chi tiết phòng", icon: <WalletOutlined /> },
-        { label: "Phòng đang ở", value: `${rooms.length}/6`, note: "100% lấp đầy", icon: <HomeOutlined /> },
-        { label: "Thành viên", value: `${residentCount} người`, note: "Theo danh sách phòng", icon: <TeamOutlined /> },
-        { label: "Giá bình quân", value: compactVnd.format(totalRent / rooms.length), note: "Mỗi phòng / tháng", icon: <BankOutlined /> },
+        { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined /> },
+        { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% lấp đầy` : "Chưa có phòng", icon: <HomeOutlined /> },
+        { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined /> },
+        { label: "Giá bình quân", value: rooms.length ? compactVnd.format(totalRent / rooms.length) : "0 ₫", note: "Mỗi phòng / tháng", icon: <BankOutlined /> },
       ]} />
 
       <Flex className="view-actions" justify="space-between" align="center" gap={12} wrap>
         <Segmented value={display} options={["Danh sách", "Sơ đồ tầng"]} onChange={(value) => setDisplay(value as typeof display)} />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => onNotice("Chức năng thêm phòng sẽ lưu vào Supabase ở bước tiếp theo.")}>Thêm phòng</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Thêm phòng</Button>
       </Flex>
 
-      {display === "Danh sách" ? (
+      {loading ? <Skeleton active paragraph={{ rows: 7 }} /> : !rooms.length ? (
+        <Card className="section-card"><Empty description="Chưa có phòng nào"><Button type="primary" onClick={openCreate}>Thêm phòng đầu tiên</Button></Empty></Card>
+      ) : display === "Danh sách" ? (
         <Row gutter={[16, 16]}>
-          {rooms.map((room) => (
-            <Col xs={24} md={12} xl={8} key={room.code}>
-              <RoomCard room={room} onEdit={() => editRoom(room)} />
-            </Col>
-          ))}
+          {rooms.map((room) => <Col xs={24} md={12} xl={8} key={room.id}><RoomCard room={room} onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} /></Col>)}
         </Row>
       ) : (
         <div className="floor-board">
-          {[4, 3, 2, 1].map((floor) => (
+          {floors.map((floor) => (
             <section className="floor-line" key={floor}>
               <div className="floor-number"><Typography.Text>TẦNG</Typography.Text><strong>{floor}</strong></div>
-              <div className="floor-rooms">
-                {floor === 1 ? (
-                  <>
-                    <Card className="utility-card"><HomeOutlined /><strong>Bếp chung</strong><span>Khu sinh hoạt</span></Card>
-                    <Card className="utility-card"><HomeOutlined /><strong>Để xe</strong><span>Khu dùng chung</span></Card>
-                  </>
-                ) : rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.code} room={room} compact onEdit={() => editRoom(room)} />)}
-              </div>
+              <div className="floor-rooms">{rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.id} room={room} compact onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} />)}</div>
             </section>
           ))}
         </div>
       )}
 
-      <Alert
-        type="info"
-        showIcon
-        title="Cách tính từ file Excel"
-        description="Giá phòng = Tổng giá nhà × hệ số tầng × hệ số kích thước / tổng hệ số. Phòng nhiều người được chia đều cho số người trong phòng."
-      />
-
-      <Modal title={editingRoom ? `Chỉnh sửa ${editingRoom.code}` : "Chỉnh sửa phòng"} open={Boolean(editingRoom)} onCancel={() => setEditingRoom(null)} footer={null} destroyOnHidden>
+      <Modal title={editingRoom ? `Chỉnh sửa ${editingRoom.code}` : "Thêm phòng mới"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
         <Form form={form} layout="vertical" onFinish={saveRoom}>
           <Row gutter={12}>
-            <Col span={12}><Form.Item name="code" label="Mã phòng" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={12}><Form.Item name="floor" label="Tầng" rules={[{ required: true }]}><Select options={[2, 3, 4].map((floor) => ({ value: floor, label: `Tầng ${floor}` }))} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="code" label="Mã phòng" rules={[{ required: true }]}><Input placeholder="P.101" /></Form.Item></Col>
+            <Col span={12}><Form.Item name="floor" label="Tầng" rules={[{ required: true }]}><Input type="number" min={1} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}><Form.Item name="size" label="Loại phòng" rules={[{ required: true }]}><Select options={["Phòng to", "Phòng nhỏ"].map((value) => ({ value, label: value }))} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="room_type" label="Loại phòng" rules={[{ required: true }]}><Input placeholder="Phòng tiêu chuẩn" /></Form.Item></Col>
             <Col span={12}><Form.Item name="coefficient" label="Hệ số" rules={[{ required: true }]}><Input inputMode="decimal" /></Form.Item></Col>
           </Row>
-          <Form.Item name="residents" label="Người đang ở" extra="Ngăn cách tên bằng dấu phẩy" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} placeholder="Ví dụ: Hải, Kiên" />
+          <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
+            <Select options={[{ value: "vacant", label: "Trống" }, { value: "occupied", label: "Đang ở" }, { value: "leaving", label: "Sắp trống" }, { value: "maintenance", label: "Bảo trì" }]} />
           </Form.Item>
-          <Form.Item name="rent" label="Giá thuê tháng (VNĐ)" rules={[{ required: true }]}>
-            <Input inputMode="numeric" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>Lưu thay đổi</Button>
+          <Form.Item name="residents" label="Người đang ở" extra="Ngăn cách tên bằng dấu phẩy"><Input.TextArea rows={3} placeholder="Ví dụ: Minh, An" /></Form.Item>
+          <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
+          <Button type="primary" htmlType="submit" loading={saving} block>{editingRoom ? "Lưu thay đổi" : "Thêm phòng"}</Button>
         </Form>
       </Modal>
     </div>
   );
 }
 
-function RoomCard({ room, compact = false, onEdit }: { room: RentalRoom; compact?: boolean; onEdit: () => void }) {
-  const perPerson = room.rent / room.residents.length;
+function RoomCard({ room, compact = false, onEdit, onDelete }: { room: RentalRoom; compact?: boolean; onEdit: () => void; onDelete: () => void }) {
+  const statusMap = { vacant: ["Trống", "default"], occupied: ["Đang ở", "success"], leaving: ["Sắp trống", "warning"], maintenance: ["Bảo trì", "purple"] } as const;
+  const [statusLabel, statusColor] = statusMap[room.status];
   return (
     <Card className={`rental-card ${compact ? "compact" : ""}`} hoverable={!compact}>
       <Flex justify="space-between" align="center">
         <Tag color="gold">Tầng {room.floor}</Tag>
-        <Space size={4}>
-          <Tag color="success">Đang ở</Tag>
+        <Space size={2}>
+          <Tag color={statusColor}>{statusLabel}</Tag>
           <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit}>Sửa</Button>
+          <Popconfirm title="Xóa phòng này?" description="Dữ liệu không thể khôi phục." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={onDelete}>
+            <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label={`Xóa ${room.code}`} />
+          </Popconfirm>
         </Space>
       </Flex>
       <Flex className="room-title-line" justify="space-between" align="end">
-        <div><Typography.Text type="secondary">{room.size}</Typography.Text><Typography.Title level={3}>{room.code}</Typography.Title></div>
-        <div className="room-rent"><Typography.Text strong>{vnd.format(room.rent)}</Typography.Text><span>/ tháng</span></div>
+        <div><Typography.Text type="secondary">{room.room_type}</Typography.Text><Typography.Title level={3}>{room.code}</Typography.Title></div>
+        <div className="room-rent"><Typography.Text strong>{vnd.format(room.base_rent)}</Typography.Text><span>/ tháng</span></div>
       </Flex>
       <Flex gap={6} wrap className="resident-list">
-        {room.residents.map((resident) => <Tag key={resident} icon={<Avatar size={18}>{resident.slice(0, 1)}</Avatar>}>{resident}</Tag>)}
+        {room.residents.length ? room.residents.map((resident) => <Tag key={resident} icon={<Avatar size={18}>{resident.slice(0, 1)}</Avatar>}>{resident}</Tag>) : <Typography.Text type="secondary">Chưa có người ở</Typography.Text>}
       </Flex>
       <Flex justify="space-between" className="room-card-meta">
         <Typography.Text type="secondary">Hệ số <b>{room.coefficient}</b></Typography.Text>
-        <Typography.Text type="secondary">Mỗi người <b>{vnd.format(perPerson)}</b></Typography.Text>
+        <Typography.Text type="secondary">Mỗi người <b>{room.residents.length ? vnd.format(room.base_rent / room.residents.length) : "—"}</b></Typography.Text>
       </Flex>
     </Card>
   );
 }
 
-export function ExpensesView({ onNotice, users, currentUserEmail }: { onNotice: NoticeHandler; users: OrganizationUser[]; currentUserEmail: string }) {
-  const availableUsers = useMemo(() => {
-    const fallbackUsers: OrganizationUser[] = peopleData.map((person, index) => ({ user_id: `demo-${index}`, full_name: person.name, email: "" }));
-    return uniqueOrganizationUsers(users.length ? users : fallbackUsers);
-  }, [users]);
-  const currentUser = availableUsers.find((user) => user.email === currentUserEmail) ?? availableUsers[0];
-  const [expenses, setExpenses] = useState(originalExpenses);
+export function ExpensesView({ organizationId, propertyId, onNotice, users, currentUserEmail }: SharedProps & { users: OrganizationUser[]; currentUserEmail: string }) {
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [monthFilter, setMonthFilter] = useState<Dayjs | null>(dayjs("2026-05-01"));
-  const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
-  const [settlementStates, setSettlementStates] = useState<Record<string, boolean>>(
-    Object.fromEntries(peopleData.map((person) => [person.name, person.paid])),
-  );
+  const [monthFilter, setMonthFilter] = useState<Dayjs | null>(currentPeriod);
+  const [statusFilter, setStatusFilter] = useState<"all" | ExpenseRecord["status"]>("all");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ExpenseFormValues>();
-  const selectedParticipants = Form.useWatch("participantIds", form) ?? [];
+  const selectedParticipants = Form.useWatch("participant_ids", form) ?? [];
+  const userMap = useMemo(() => new Map(users.map((user) => [user.user_id, user])), [users]);
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem("708-la-thanh-settlements");
-    if (!saved) return;
-    try {
-      const states = JSON.parse(saved) as Record<string, boolean>;
-      setSettlementStates((current) => ({ ...current, ...states }));
-    } catch {
-      window.localStorage.removeItem("708-la-thanh-settlements");
-    }
-  }, []);
+  const loadExpenses = useCallback(async () => {
+    if (!organizationId) return;
+    setLoading(true);
+    const { data, error } = await createClient().from("expenses")
+      .select("id, category, amount, expense_date, payer_user_id, status, reference_code, note, expense_participants(user_id, allocated_amount)")
+      .eq("organization_id", organizationId)
+      .order("expense_date", { ascending: false });
+    if (error) onNotice("Không tải được chi phí. Hãy chạy migration 0006.");
+    const normalized = ((data ?? []) as unknown as ExpenseRecord[]).map((expense) => ({
+      ...expense,
+      amount: Number(expense.amount),
+      expense_participants: (expense.expense_participants ?? []).map((participant) => ({ ...participant, allocated_amount: Number(participant.allocated_amount) })),
+    }));
+    setExpenses(normalized);
+    setLoading(false);
+  }, [onNotice, organizationId]);
+
+  useEffect(() => { void loadExpenses(); }, [loadExpenses]);
 
   const filtered = expenses.filter((expense) => {
-    const matchesQuery = expense.name.toLocaleLowerCase("vi").includes(query.toLocaleLowerCase("vi"));
-    const matchesMonth = !monthFilter || expenseMonthKey(expense.date) === monthFilter.format("YYYY-MM");
-    const matchesStatus = statusFilter === "all" || expense.status === statusFilter;
-    return matchesQuery && matchesMonth && matchesStatus;
+    const matchesQuery = expense.category.toLocaleLowerCase("vi").includes(query.toLocaleLowerCase("vi"));
+    const matchesMonth = !monthFilter || dayjs(expense.expense_date).format("YYYY-MM") === monthFilter.format("YYYY-MM");
+    return matchesQuery && matchesMonth && (statusFilter === "all" || expense.status === statusFilter);
   });
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const completedTotal = expenses.filter((expense) => expense.status === "completed").reduce((sum, expense) => sum + expense.amount, 0);
   const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0);
-  const paidPeople = peopleData.filter((person) => settlementStates[person.name]);
-  const unpaidPeople = peopleData.filter((person) => !settlementStates[person.name]);
-  const paidAmount = paidPeople.reduce((sum, person) => sum + person.total, 0);
-  const unpaidAmount = unpaidPeople.reduce((sum, person) => sum + person.total, 0);
 
-  function openExpenseForm() {
+  function openCreate() {
+    const currentUser = users.find((user) => user.email === currentUserEmail) ?? users[0];
+    setEditingExpense(null);
+    form.setFieldsValue({ category: "", amount: "", expense_date: dayjs(), payer_user_id: currentUser?.user_id, participant_ids: users.map((user) => user.user_id), status: "completed", reference_code: "", note: "" });
+    setModalOpen(true);
+  }
+
+  function openEdit(expense: ExpenseRecord) {
+    setEditingExpense(expense);
     form.setFieldsValue({
-      name: "",
-      amount: "",
-      payerId: currentUser?.user_id ?? "",
-      participantIds: availableUsers.map((user) => user.user_id),
+      category: expense.category,
+      amount: expense.amount.toLocaleString("vi-VN"),
+      expense_date: dayjs(expense.expense_date),
+      payer_user_id: expense.payer_user_id ?? users[0]?.user_id,
+      participant_ids: expense.expense_participants.map((participant) => participant.user_id),
+      status: expense.status,
+      reference_code: expense.reference_code ?? "",
+      note: expense.note ?? "",
     });
-    setShowForm(true);
+    setModalOpen(true);
   }
 
-  function addExpense(values: ExpenseFormValues) {
-    const value = Number(values.amount.replace(/[^0-9]/g, ""));
-    const payer = availableUsers.find((user) => user.user_id === values.payerId);
-    const participantNames = availableUsers.filter((user) => values.participantIds.includes(user.user_id)).map((user) => user.full_name);
-    if (!values.name.trim() || !value || !payer || !participantNames.length) {
-      onNotice("Hãy nhập khoản chi, chọn người thanh toán và ít nhất một người tham gia.");
-      return;
-    }
-    setExpenses((current) => [...current, { id: Date.now(), date: "Hôm nay", name: values.name.trim(), amount: value, payer: payer.full_name, participants: participantNames, status: "done" }]);
-    setShowForm(false);
-    onNotice(`Đã thêm ${values.name.trim()} và chia cho ${participantNames.length} người.`);
+  async function saveExpense(values: ExpenseFormValues) {
+    const amount = parseMoney(values.amount);
+    if (!amount || !values.participant_ids.length) return onNotice("Nhập số tiền và chọn ít nhất một thành viên.");
+    setSaving(true);
+    const { error } = await createClient().rpc("save_expense", {
+      target_expense_id: editingExpense?.id ?? null,
+      target_property_id: propertyId,
+      target_category: values.category.trim(),
+      target_amount: amount,
+      target_expense_date: values.expense_date.format("YYYY-MM-DD"),
+      target_payer_user_id: values.payer_user_id,
+      target_participant_ids: values.participant_ids,
+      target_status: values.status,
+      target_reference_code: values.reference_code?.trim() || null,
+      target_note: values.note?.trim() || null,
+    });
+    setSaving(false);
+    if (error) return onNotice(errorMessage(error, "Không thể lưu khoản chi."));
+    setModalOpen(false);
+    onNotice(editingExpense ? "Đã cập nhật khoản chi." : "Đã thêm khoản chi mới.");
+    await loadExpenses();
   }
 
-  const columns: TableColumnsType<Expense> = [
-    { title: "Ngày", dataIndex: "date", width: 110 },
-    {
-      title: "Nội dung",
-      dataIndex: "name",
-      width: 190,
-      render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference}</Typography.Text>}</div>,
-    },
-    {
-      title: "Người thanh toán",
-      dataIndex: "payer",
-      width: 160,
-      render: (payer: string) => <Space><Avatar size="small">{payer.slice(0, 1)}</Avatar><Typography.Text>{payer}</Typography.Text></Space>,
-    },
-    {
-      title: "Người tham gia",
-      dataIndex: "participants",
-      width: 250,
-      render: (participants: string[]) => <div><Typography.Text strong>{participants.length} người</Typography.Text><Typography.Text type="secondary" className="cell-subtext ellipsis">{participants.join(", ")}</Typography.Text></div>,
-    },
-    { title: "Mỗi người", width: 130, render: (_, expense) => vnd.format(expense.amount / expense.participants.length) },
+  async function deleteExpense(expense: ExpenseRecord) {
+    const { error } = await createClient().from("expenses").delete().eq("id", expense.id);
+    if (error) return onNotice("Không thể xóa khoản chi này.");
+    onNotice(`Đã xóa ${expense.category}.`);
+    await loadExpenses();
+  }
+
+  const columns: TableColumnsType<ExpenseRecord> = [
+    { title: "Ngày", dataIndex: "expense_date", width: 115, render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
+    { title: "Nội dung", dataIndex: "category", width: 190, render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference_code && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference_code}</Typography.Text>}</div> },
+    { title: "Người thanh toán", dataIndex: "payer_user_id", width: 170, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
+    { title: "Người tham gia", width: 220, render: (_, expense) => expense.expense_participants.map((item) => userMap.get(item.user_id)?.full_name).filter(Boolean).join(", ") || "—" },
     { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
-    { title: "Trạng thái", dataIndex: "status", width: 130, render: (status: Expense["status"]) => <Tag color={status === "done" ? "success" : "warning"} icon={status === "done" ? <CheckCircleFilled /> : undefined}>{status === "done" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
+    { title: "Trạng thái", dataIndex: "status", width: 125, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
+    { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
   ];
 
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined /> },
-        { label: "Số tiền đã đóng", value: vnd.format(paidAmount), note: `${paidPeople.length}/${peopleData.length} người đã đóng`, icon: <CheckCircleFilled /> },
-        { label: "Số tiền chưa đóng", value: vnd.format(unpaidAmount), note: `${unpaidPeople.length}/${peopleData.length} người chưa đóng`, icon: <BankOutlined /> },
-        { label: "Trạng thái", value: unpaidPeople.length ? "Còn tồn đọng" : "Đã đóng đủ", note: unpaidPeople.length ? `Còn ${vnd.format(unpaidAmount)} cần thu` : "Tất cả thành viên đã hoàn tất", icon: <InfoCircleOutlined /> },
+        { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined /> },
+        { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled /> },
+        { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined /> },
+        { label: "Thành viên", value: `${users.length} người`, note: "Có thể tham gia chia phí", icon: <TeamOutlined /> },
       ]} />
-
-      <Card
-        className="section-card"
-        title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Dữ liệu kỳ tháng 05/2026 từ file SINH HOẠT CHUNG</Typography.Text></div>}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={openExpenseForm}>Thêm chi phí</Button>}
-      >
+      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Dữ liệu được lưu trực tiếp trên Supabase</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!users.length}>Thêm chi phí</Button>}>
         <Flex className="table-toolbar" gap={10} wrap>
           <Input allowClear prefix={<SearchOutlined />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm khoản chi..." className="table-search" />
-          <DatePicker
-            picker="month"
-            allowClear
-            value={monthFilter}
-            onChange={setMonthFilter}
-            format="MM/YYYY"
-            placeholder="Tất cả thời gian"
-            className="month-filter"
-          />
-          <Select
-            className="status-filter"
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value as typeof statusFilter)}
-            options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "done", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]}
-          />
+          <DatePicker picker="month" allowClear value={monthFilter} onChange={setMonthFilter} format="MM/YYYY" placeholder="Tất cả thời gian" className="month-filter" />
+          <Select className="status-filter" value={statusFilter} onChange={(value) => setStatusFilter(value as typeof statusFilter)} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} />
         </Flex>
-        <div className="desktop-data-table">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={filtered}
-          pagination={false}
-          scroll={{ x: 1110 }}
-          summary={() => <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={5} align="right"><Typography.Text>Tổng cộng theo bộ lọc</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={6} /></Table.Summary.Row>}
-        />
-        </div>
-        <div className="mobile-data-list" aria-label="Danh s?ch chi ph?">
-          {filtered.length ? filtered.map((expense) => (
-            <Card key={expense.id} size="small" className="mobile-record-card">
-              <Flex justify="space-between" align="flex-start" gap={12}>
-                <div className="mobile-record-title">
-                  <Typography.Text strong>{expense.name}</Typography.Text>
-                  <Typography.Text type="secondary">{expense.date}{expense.reference ? ` ? ${expense.reference}` : ""}</Typography.Text>
-                </div>
-                <Tag color={expense.status === "done" ? "success" : "warning"}>{expense.status === "done" ? "Ho?n th?nh" : "Ch? x? l?"}</Tag>
-              </Flex>
-              <div className="mobile-record-grid">
-                <MobileField label="Ng??i thanh to?n" value={expense.payer} />
-                <MobileField label="Ng??i tham gia" value={`${expense.participants.length} ng??i`} />
-                <MobileField label="M?i ng??i" value={vnd.format(expense.amount / expense.participants.length)} />
-                <MobileField label="T?ng chi" value={vnd.format(expense.amount)} strong />
-              </div>
-              <Typography.Text type="secondary" className="mobile-participants">{expense.participants.join(", ")}</Typography.Text>
-            </Card>
-          )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Kh?ng c? kho?n chi ph? h?p" />}
-          <Flex className="mobile-list-total" justify="space-between" align="center">
-            <Typography.Text type="secondary">T?ng theo b? l?c</Typography.Text>
-            <Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text>
-          </Flex>
-        </div>
+        <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={4} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={4} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} colSpan={2} /></Table.Summary.Row> : null} />
       </Card>
 
-      <Modal title="Thêm chi phí sinh hoạt" open={showForm} onCancel={() => setShowForm(false)} footer={null} width={650} destroyOnHidden>
-        <Form form={form} layout="vertical" onFinish={addExpense}>
-          <Form.Item name="name" label="Nội dung" rules={[{ required: true, message: "Nhập nội dung khoản chi" }]}>
-            <Input autoFocus placeholder="Ví dụ: Tiền gas" />
-          </Form.Item>
-          <Form.Item name="amount" label="Số tiền (VNĐ)" rules={[{ required: true, message: "Nhập số tiền" }]}>
-            <Input inputMode="numeric" placeholder="Ví dụ: 450.000" />
-          </Form.Item>
-          <Form.Item name="payerId" label="Người thanh toán" rules={[{ required: true, message: "Chọn người thanh toán" }]} extra={users.length ? "Danh sách thành viên lấy từ Supabase" : "Đang dùng danh sách mẫu"}>
-            <Select options={availableUsers.map((user) => ({ value: user.user_id, label: user.email ? `${user.full_name} — ${user.email}` : user.full_name }))} />
-          </Form.Item>
-          <div className="participant-field-heading">
-            <Typography.Text strong><span className="required-mark">*</span> Người tham gia</Typography.Text>
-            <Button type="link" size="small" onClick={() => form.setFieldValue("participantIds", selectedParticipants.length === availableUsers.length ? [] : availableUsers.map((user) => user.user_id))}>{selectedParticipants.length === availableUsers.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}</Button>
-          </div>
-          <Form.Item name="participantIds" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${availableUsers.length} người`}>
-            <Checkbox.Group className="participant-grid" options={availableUsers.map((user) => ({ value: user.user_id, label: user.full_name }))} />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>Lưu khoản chi</Button>
+      <Modal title={editingExpense ? "Chỉnh sửa chi phí" : "Thêm chi phí"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={680} forceRender>
+        <Form form={form} layout="vertical" onFinish={saveExpense}>
+          <Row gutter={12}>
+            <Col xs={24} sm={14}><Form.Item name="category" label="Nội dung" rules={[{ required: true }]}><Input placeholder="Ví dụ: Tiền điện" /></Form.Item></Col>
+            <Col xs={24} sm={10}><Form.Item name="amount" label="Số tiền (VNĐ)" rules={[{ required: true }]}><Input inputMode="numeric" placeholder="1.500.000" /></Form.Item></Col>
+          </Row>
+          <Row gutter={12}>
+            <Col xs={24} sm={12}><Form.Item name="expense_date" label="Ngày chi" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}><Select options={[{ value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="payer_user_id" label="Người thanh toán" rules={[{ required: true }]}><Select options={users.map((user) => ({ value: user.user_id, label: `${user.full_name} — ${user.email}` }))} /></Form.Item>
+          <div className="participant-field-heading"><Typography.Text strong><span className="required-mark">*</span> Người tham gia</Typography.Text><Button type="link" size="small" onClick={() => form.setFieldValue("participant_ids", selectedParticipants.length === users.length ? [] : users.map((user) => user.user_id))}>{selectedParticipants.length === users.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}</Button></div>
+          <Form.Item name="participant_ids" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${users.length} người`}><Checkbox.Group className="participant-grid" options={users.map((user) => ({ value: user.user_id, label: user.full_name }))} /></Form.Item>
+          <Row gutter={12}>
+            <Col xs={24} sm={12}><Form.Item name="reference_code" label="Mã tham chiếu"><Input /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="note" label="Ghi chú"><Input /></Form.Item></Col>
+          </Row>
+          <Button type="primary" htmlType="submit" loading={saving} block>{editingExpense ? "Lưu thay đổi" : "Thêm chi phí"}</Button>
         </Form>
       </Modal>
     </div>
   );
 }
 
-export function PeopleCostsView({ onNotice }: { onNotice: NoticeHandler }) {
-  const [people, setPeople] = useState(peopleData);
+function usePeopleCosts(organizationId: string, propertyId: string, users: OrganizationUser[], onError?: NoticeHandler) {
+  const [people, setPeople] = useState<PersonCost[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!organizationId || !propertyId) return;
+    setLoading(true);
+    const supabase = createClient();
+    const [{ data: expenseRows, error: expenseError }, { data: settlementRows, error: settlementError }] = await Promise.all([
+      supabase.from("expenses").select("id, category, amount, expense_date, payer_user_id, status, reference_code, note, expense_participants(user_id, allocated_amount)").eq("organization_id", organizationId).gte("expense_date", currentPeriod.format("YYYY-MM-DD")).lt("expense_date", currentPeriod.add(1, "month").format("YYYY-MM-DD")),
+      supabase.from("member_settlements").select("user_id, is_settled").eq("property_id", propertyId).eq("period", currentPeriod.format("YYYY-MM-DD")),
+    ]);
+    if (expenseError || settlementError) onError?.("Không tải được dữ liệu đối soát. Hãy chạy migration 0006.");
+    const normalizedExpenses = ((expenseRows ?? []) as unknown as ExpenseRecord[]).map((expense) => ({ ...expense, amount: Number(expense.amount), expense_participants: (expense.expense_participants ?? []).map((item) => ({ ...item, allocated_amount: Number(item.allocated_amount) })) }));
+    const paidMap = new Map(((settlementRows ?? []) as Settlement[]).map((item) => [item.user_id, item.is_settled]));
+    setExpenses(normalizedExpenses);
+    setPeople(users.map((user) => {
+      const allocated = normalizedExpenses.reduce((sum, expense) => sum + (expense.expense_participants.find((item) => item.user_id === user.user_id)?.allocated_amount ?? 0), 0);
+      const advanced = normalizedExpenses.filter((expense) => expense.payer_user_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
+      return { ...user, allocated, advanced, balance: allocated - advanced, paid: paidMap.get(user.user_id) ?? false };
+    }));
+    setLoading(false);
+  }, [onError, organizationId, propertyId, users]);
+
+  useEffect(() => { void load(); }, [load]);
+  return { people, expenses, loading, reload: load };
+}
+
+export function PeopleCostsView({ organizationId, propertyId, users, onNotice }: SharedProps & { users: OrganizationUser[] }) {
   const [filter, setFilter] = useState<"Tất cả" | "Chưa đóng" | "Đã đóng">("Tất cả");
-  const [showQr, setShowQr] = useState(false);
+  const { people, expenses, loading, reload } = usePeopleCosts(organizationId, propertyId, users, onNotice);
+  const visible = people.filter((person) => filter === "Tất cả" || (filter === "Đã đóng" ? person.paid : !person.paid));
+  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const unpaid = people.filter((person) => !person.paid && person.balance > 0);
+  const unpaidTotal = unpaid.reduce((sum, person) => sum + person.balance, 0);
+  const paidPercent = people.length ? Math.round(people.filter((person) => person.paid).length / people.length * 100) : 0;
+  const receiver = [...people].sort((a, b) => a.balance - b.balance)[0];
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem("708-la-thanh-settlements");
-    if (!saved) return;
-    try {
-      const states = JSON.parse(saved) as Record<string, boolean>;
-      setPeople((current) => current.map((person) => states[person.name] === undefined ? person : { ...person, paid: states[person.name] }));
-    } catch {
-      window.localStorage.removeItem("708-la-thanh-settlements");
-    }
-  }, []);
-
-  const visible = useMemo(() => people.filter((person) => filter === "Tất cả" || (filter === "Đã đóng" ? person.paid : !person.paid)), [filter, people]);
-  const unpaidCount = people.filter((person) => !person.paid).length;
-  const unpaidTotal = people.filter((person) => !person.paid).reduce((sum, person) => sum + person.total, 0);
-  const paidPercent = Math.round((people.length - unpaidCount) / people.length * 100);
-
-  function togglePaid(name: string, paid: boolean) {
-    const next = people.map((person) => person.name === name ? { ...person, paid } : person);
-    setPeople(next);
-    window.localStorage.setItem("708-la-thanh-settlements", JSON.stringify(Object.fromEntries(next.map((person) => [person.name, person.paid]))));
-    onNotice(paid ? `Đã xác nhận ${name} đóng tiền.` : `Đã chuyển ${name} về trạng thái chưa đóng.`);
+  async function togglePaid(person: PersonCost, paid: boolean) {
+    const { error } = await createClient().from("member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, user_id: person.user_id, period: currentPeriod.format("YYYY-MM-DD"), is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,user_id,period" });
+    if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
+    onNotice(paid ? `Đã xác nhận ${person.full_name} thanh toán.` : `Đã chuyển ${person.full_name} về chưa thanh toán.`);
+    await reload();
   }
 
-  const sharedAmount = Math.round(peopleData[0].total);
-  const qrUrl = `https://img.vietqr.io/image/VCB-1041702775-compact2.png?amount=${sharedAmount}&addInfo=${encodeURIComponent("708 LT T5 2026")}`;
-
   const columns: TableColumnsType<PersonCost> = [
-    {
-      title: "Thành viên",
-      dataIndex: "name",
-      width: 170,
-      render: (name: string) => <Space><Avatar>{name.replace(/^(A |C )/, "").slice(0, 1)}</Avatar><Typography.Text strong>{name}</Typography.Text></Space>,
-    },
-    { title: "Phần chi phí", dataIndex: "total", width: 140, render: (amount: number) => vnd.format(amount) },
-    { title: "Đã ứng", dataIndex: "advanced", width: 140, render: (amount: number) => vnd.format(amount) },
-    {
-      title: "Đối soát",
-      dataIndex: "balance",
-      width: 170,
-      render: (balance: number) => <div><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div>,
-    },
-    {
-      title: "STK - Ngân hàng",
-      width: 190,
-      render: (_, person) => <div><Typography.Text strong>{person.account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank}</Typography.Text></div>,
-    },
-    {
-      title: "Đã đóng",
-      dataIndex: "paid",
-      width: 140,
-      render: (paid: boolean, person) => <Checkbox checked={paid} onChange={(event) => togglePaid(person.name, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox>,
-    },
+    { title: "Thành viên", dataIndex: "full_name", width: 180, render: (name: string) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
+    { title: "Phần chi phí", dataIndex: "allocated", width: 145, render: (amount: number) => vnd.format(amount) },
+    { title: "Đã ứng", dataIndex: "advanced", width: 145, render: (amount: number) => vnd.format(amount) },
+    { title: "Đối soát", dataIndex: "balance", width: 175, render: (balance: number) => <div><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
+    { title: "STK - Ngân hàng", width: 190, render: (_, person) => <div><Typography.Text strong>{person.bank_account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank_name || "Chưa cập nhật"}</Typography.Text></div> },
+    { title: "Đã đóng", dataIndex: "paid", width: 145, render: (paid: boolean, person) => <Checkbox checked={paid} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox> },
   ];
 
   return (
     <div className="page-stack">
-      <Card className="payment-banner">
-        <Row align="middle" gutter={[20, 20]}>
-          <Col flex="auto">
-            <Typography.Text className="banner-eyebrow">KỲ THANH TOÁN THÁNG 05/2026</Typography.Text>
-            <Typography.Title level={3}>Thanh toán từ ngày 15 đến ngày 20</Typography.Title>
-            <Typography.Paragraph>Quét QR đúng số tiền, sau đó quản lý tick xác nhận đã đóng.</Typography.Paragraph>
-          </Col>
-          <Col>
-            <div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" format={() => `${people.length - unpaidCount}/${people.length}`} /><span>đã thanh toán</span></div>
-          </Col>
-        </Row>
-      </Card>
-
+      <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {currentPeriod.format("MM/YYYY")}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu được tính tự động từ các khoản chi trong tháng.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" /><span>đã thanh toán</span></div></Col></Row></Card>
       <ViewSummary items={[
-        { label: "Chi phí cần chia", value: vnd.format(7_243_440), note: "Điện, nước, internet", icon: <WalletOutlined /> },
-        { label: "Mỗi người", value: vnd.format(804_826.6667), note: "9 người tham gia", icon: <TeamOutlined /> },
-        { label: "Chưa thanh toán", value: `${unpaidCount} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined /> },
-        { label: "Người nhận hoàn", value: "A Hải", note: vnd.format(6_438_613.333), icon: <BankOutlined /> },
+        { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong tháng`, icon: <WalletOutlined /> },
+        { label: "Thành viên", value: `${people.length} người`, note: "Tham gia tổ chức", icon: <TeamOutlined /> },
+        { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined /> },
+        { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined /> },
       ]} />
-
-      <Card
-        className="section-card"
-        title={<div><span>Chi phí từng người</span><Typography.Text type="secondary" className="card-title-note">Sau khi nhận tiền, quản lý tự tick xác nhận đã đóng</Typography.Text></div>}
-        extra={<Space wrap><Button type="primary" icon={<QrcodeOutlined />} onClick={() => setShowQr(true)}>Mã QR thanh toán</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}
-      >
-        <div className="desktop-data-table">
-          <Table rowKey="name" columns={columns} dataSource={visible} pagination={false} scroll={{ x: 920 }} />
-        </div>
-        <Alert className="table-note" type="info" showIcon title="Số âm trong cột đối soát nghĩa là thành viên đã ứng trước và cần được nhận lại tiền." />
-        <div className="mobile-data-list" aria-label="Chi ph? t?ng ng??i">
-          {visible.map((person) => (
-            <Card key={person.name} size="small" className={`mobile-record-card person-record ${person.paid ? "is-paid" : ""}`}>
-              <Flex justify="space-between" align="center" gap={12}>
-                <Space size={9}>
-                  <Avatar>{person.name.replace(/^(A |C )/, "").slice(0, 1)}</Avatar>
-                  <div className="mobile-record-title"><Typography.Text strong>{person.name}</Typography.Text><Typography.Text type="secondary">{person.bank}</Typography.Text></div>
-                </Space>
-                <Checkbox checked={person.paid} onChange={(event) => togglePaid(person.name, event.target.checked)} aria-label={`X?c nh?n ${person.name} ?? ??ng`} />
-              </Flex>
-              <div className="mobile-record-grid three-fields">
-                <MobileField label="Ph?n chi ph?" value={vnd.format(person.total)} />
-                <MobileField label="?? ?ng" value={vnd.format(person.advanced)} />
-                <MobileField label={person.balance < 0 ? "???c nh?n l?i" : "C?n ??ng"} value={vnd.format(Math.abs(person.balance))} strong tone={person.balance < 0 ? "positive" : "negative"} />
-              </div>
-              <Flex justify="space-between" align="center" className="mobile-record-footer">
-                <Typography.Text type="secondary">{person.account || "Ch?a c? s? t?i kho?n"}</Typography.Text>
-                <Tag color={person.paid ? "success" : "warning"}>{person.paid ? "?? ??ng" : "Ch?a ??ng"}</Tag>
-              </Flex>
-            </Card>
-          ))}
-        </div>
+      <Card className="section-card" title={<div><span>Chi phí từng người</span><Typography.Text type="secondary" className="card-title-note">Tick để cập nhật trạng thái đã thanh toán</Typography.Text></div>} extra={<Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} />}>
+        <Table rowKey="user_id" loading={loading} columns={columns} dataSource={visible} pagination={false} scroll={{ x: 950 }} locale={{ emptyText: <Empty description="Chưa có dữ liệu đối soát" /> }} />
       </Card>
-
-      <Modal title="Thanh toán chi phí tháng 05/2026" open={showQr} onCancel={() => setShowQr(false)} footer={<Button type="primary" onClick={() => setShowQr(false)}>Đóng</Button>} width={440}>
-        <div className="qr-content">
-          <Typography.Text type="secondary">MÃ QR DÙNG CHUNG</Typography.Text>
-          <Image preview={false} src={qrUrl} alt="Mã QR thanh toán chi phí tháng 05/2026" width={250} />
-          <Statistic title="Số tiền mỗi người" value={sharedAmount} formatter={(value) => vnd.format(Number(value))} />
-          <Descriptions size="small" column={1} bordered>
-            <Descriptions.Item label="Người nhận">A Hải</Descriptions.Item>
-            <Descriptions.Item label="Ngân hàng">Vietcombank · 1041702775</Descriptions.Item>
-            <Descriptions.Item label="Nội dung">708 LT T5 2026</Descriptions.Item>
-          </Descriptions>
-          <Alert type="warning" showIcon title="Mở hoặc đóng mã QR không thay đổi trạng thái. Sau khi nhận tiền, hãy tick thủ công ở bảng." />
-        </div>
-      </Modal>
     </div>
   );
 }
 
-export function ReportView() {
-  const total = originalExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const paid = peopleData.filter((person) => person.paid).reduce((sum, person) => sum + person.total, 0);
-  const outstanding = total - paid;
-  const collectionRate = Math.round(paid / total * 100);
+export function ReportView({ organizationId, propertyId, users }: { organizationId: string; propertyId: string; users: OrganizationUser[] }) {
+  const { people, expenses, loading } = usePeopleCosts(organizationId, propertyId, users);
+  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const collected = people.filter((person) => person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
+  const outstanding = people.filter((person) => !person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
+  const collectionRate = collected + outstanding ? Math.round(collected / (collected + outstanding) * 100) : 0;
+  const largest = [...expenses].sort((a, b) => b.amount - a.amount)[0];
+  const topPayer = [...people].sort((a, b) => b.advanced - a.advanced)[0];
 
+  if (loading) return <Skeleton active paragraph={{ rows: 10 }} />;
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng chi kỳ này", value: vnd.format(total), note: "Tháng 05/2026", icon: <WalletOutlined /> },
-        { label: "Đã thu", value: vnd.format(paid), note: `${collectionRate}% tổng chi`, icon: <CheckCircleFilled /> },
+        { label: "Tổng chi kỳ này", value: vnd.format(total), note: currentPeriod.format("MM/YYYY"), icon: <WalletOutlined /> },
+        { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% cần thu`, icon: <CheckCircleFilled /> },
         { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined /> },
-        { label: "Số thành viên", value: `${peopleData.length} người`, note: "Cùng tham gia kỳ này", icon: <TeamOutlined /> },
+        { label: "Số thành viên", value: `${users.length} người`, note: "Trong tổ chức", icon: <TeamOutlined /> },
       ]} />
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={14}>
-          <Card title="Tiến độ thu chi" className="section-card">
-            <Flex vertical gap={22}>
-              <div><Flex justify="space-between"><Typography.Text>Tiến độ đã thu</Typography.Text><Typography.Text strong>{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} strokeColor="#087a58" /></div>
-              {originalExpenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.name}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={Math.round(expense.amount / total * 100)} showInfo={false} strokeColor="#68ae92" /></div>)}
-            </Flex>
-          </Card>
-        </Col>
-        <Col xs={24} lg={10}>
-          <Card title="Tóm tắt kỳ tháng 05/2026" className="section-card">
-            <Descriptions column={1} bordered>
-              <Descriptions.Item label="Khoản chi lớn nhất">Tiền điện</Descriptions.Item>
-              <Descriptions.Item label="Người ứng tiền">A Hải</Descriptions.Item>
-              <Descriptions.Item label="Số người đã đóng">{peopleData.filter((person) => person.paid).length}/{peopleData.length}</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã đóng đủ"}</Tag></Descriptions.Item>
-            </Descriptions>
-          </Card>
-        </Col>
+        <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div><Flex justify="space-between"><Typography.Text>Tiến độ đã thu</Typography.Text><Typography.Text strong>{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
+        <Col xs={24} lg={10}><Card title={`Tóm tắt kỳ ${currentPeriod.format("MM/YYYY")}`} className="section-card"><Descriptions column={1} bordered><Descriptions.Item label="Khoản chi lớn nhất">{largest?.category ?? "—"}</Descriptions.Item><Descriptions.Item label="Người ứng nhiều nhất">{topPayer?.advanced ? topPayer.full_name : "—"}</Descriptions.Item><Descriptions.Item label="Số người đã đóng">{people.filter((person) => person.paid).length}/{people.length}</Descriptions.Item><Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã hoàn tất"}</Tag></Descriptions.Item></Descriptions></Card></Col>
       </Row>
     </div>
   );
 }
 
-function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode }[] }) {
+type MemberFormValues = { account_identifier?: string; full_name: string; role: "admin" | "member"; phone?: string; bank_account?: string; bank_name?: string };
+
+export function MembersView({ users, onNotice, onChanged }: { users: OrganizationUser[]; currentUserEmail: string; onNotice: NoticeHandler; onChanged: () => void }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<OrganizationUser | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<MemberFormValues>();
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    if (editingUser) {
+      form.setFieldsValue({ full_name: editingUser.full_name, role: editingUser.role === "admin" ? "admin" : "member", phone: editingUser.phone, bank_account: editingUser.bank_account, bank_name: editingUser.bank_name });
+    } else {
+      form.resetFields();
+      form.setFieldValue("role", "member");
+    }
+  }, [editingUser, form, modalOpen]);
+
+  function openAdd() {
+    setEditingUser(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(user: OrganizationUser) {
+    setEditingUser(user);
+    setModalOpen(true);
+  }
+
+  async function saveMember(values: MemberFormValues) {
+    setSaving(true);
+    const supabase = createClient();
+    const { error } = editingUser
+      ? await supabase.rpc("update_organization_member", { target_user_id: editingUser.user_id, target_full_name: values.full_name, target_phone: values.phone ?? "", target_bank_account: values.bank_account ?? "", target_bank_name: values.bank_name ?? "", target_role: values.role })
+      : await supabase.rpc("add_organization_member_by_login", { target_identifier: values.account_identifier ?? "", target_full_name: values.full_name, target_role: values.role });
+    setSaving(false);
+    if (error) return onNotice(errorMessage(error, "Không thể lưu thành viên."));
+    setModalOpen(false);
+    onNotice(editingUser ? "Đã cập nhật thành viên." : "Đã thêm thành viên vào tổ chức.");
+    onChanged();
+  }
+
+  async function deleteMember(user: OrganizationUser) {
+    const { error } = await createClient().rpc("delete_organization_member", { target_user_id: user.user_id });
+    if (error) return onNotice(errorMessage(error, "Không thể xóa thành viên."));
+    onNotice(`Đã xóa ${user.full_name} khỏi tổ chức.`);
+    onChanged();
+  }
+
+  const columns: TableColumnsType<OrganizationUser> = [
+    { title: "Thành viên", dataIndex: "full_name", render: (name: string, user) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><div><Typography.Text strong>{name}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.email || "Không có email liên hệ"}</Typography.Text></div></Space> },
+    { title: "Vai trò", dataIndex: "role", width: 150, render: (role: string) => <Tag color={role === "admin" ? "success" : "default"}>{role === "admin" ? "Quản trị viên" : "Thành viên"}</Tag> },
+    { title: "Số điện thoại", dataIndex: "phone", width: 150, render: (value: string) => value || "—" },
+    { title: "Ngân hàng", width: 200, render: (_, user) => user.bank_account ? <div><Typography.Text>{user.bank_account}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.bank_name}</Typography.Text></div> : "—" },
+    { title: "Thao tác", width: 130, render: (_, user) => { const isCurrentUser = user.user_id === users[0]?.user_id; return <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(user)} /><Popconfirm title="Xóa thành viên?" description="Thành viên sẽ mất quyền truy cập tổ chức." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={isCurrentUser} onConfirm={() => void deleteMember(user)}><Button type="text" danger disabled={isCurrentUser} icon={<DeleteOutlined />} /></Popconfirm></Space>; } },
+  ];
+
   return (
-    <Row gutter={[16, 16]}>
-      {items.map((item, index) => (
-        <Col xs={12} sm={12} xl={6} key={item.label} className="summary-col">
-          <Card className="summary-card">
-            <Flex justify="space-between" align="flex-start">
-              <Statistic title={item.label} value={item.value} />
-              <span className={`metric-icon ${["green", "blue", "orange", "purple"][index % 4]}`}>{item.icon}</span>
-            </Flex>
-            <Typography.Text type="secondary">{item.note}</Typography.Text>
-          </Card>
-        </Col>
-      ))}
-    </Row>
+    <div className="page-stack">
+      <ViewSummary items={[
+        { label: "Tổng thành viên", value: `${users.length} người`, note: "Đang có quyền truy cập", icon: <TeamOutlined /> },
+        { label: "Quản trị viên", value: `${users.filter((user) => user.role === "admin").length} người`, note: "Có toàn quyền quản lý", icon: <UserAddOutlined /> },
+        { label: "Thành viên", value: `${users.filter((user) => user.role !== "admin").length} người`, note: "Tự động thêm khi đăng ký", icon: <Avatar size={20}>M</Avatar> },
+        { label: "Đã cập nhật ngân hàng", value: `${users.filter((user) => user.bank_account).length} người`, note: "Phục vụ đối soát", icon: <BankOutlined /> },
+      ]} />
+      <Card className="section-card" title={<div><span>Quản lý thành viên</span><Typography.Text type="secondary" className="card-title-note">Chỉ quản trị viên có thể thay đổi vai trò và thông tin thành viên</Typography.Text></div>} extra={<Button type="primary" icon={<UserAddOutlined />} onClick={openAdd}>Thêm thành viên</Button>}>
+        <Alert type="info" showIcon className="member-help" title="Tài khoản mới và tài khoản Google sẽ tự động xuất hiện tại đây sau lần đăng nhập đầu tiên." />
+        <Table rowKey="user_id" columns={columns} dataSource={users} pagination={false} scroll={{ x: 850 }} locale={{ emptyText: <Empty description="Chưa có thành viên" /> }} />
+      </Card>
+
+      <Modal title={editingUser ? "Chỉnh sửa thành viên" : "Thêm thành viên"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
+        <Form form={form} layout="vertical" onFinish={saveMember}>
+          {!editingUser && <Form.Item name="account_identifier" label="Tên tài khoản hoặc email" extra="Tài khoản cần đăng ký ít nhất một lần trước khi được thêm." rules={[{ required: true, message: "Nhập tên tài khoản hoặc email" }]}><Input autoComplete="off" /></Form.Item>}
+          <Form.Item name="full_name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}><Select options={[{ value: "admin", label: "Quản trị viên" }, { value: "member", label: "Thành viên" }]} /></Form.Item>
+          <Form.Item name="phone" label="Số điện thoại"><Input /></Form.Item>
+          <Row gutter={12}><Col span={12}><Form.Item name="bank_account" label="Số tài khoản"><Input /></Form.Item></Col><Col span={12}><Form.Item name="bank_name" label="Ngân hàng"><Input /></Form.Item></Col></Row>
+          <Button type="primary" htmlType="submit" loading={saving} block>{editingUser ? "Lưu thay đổi" : "Thêm thành viên"}</Button>
+        </Form>
+      </Modal>
+    </div>
   );
 }
 
-function MobileField({ label, value, strong = false, tone }: { label: string; value: string; strong?: boolean; tone?: "positive" | "negative" }) {
-  return (
-    <div className={`mobile-field ${tone ?? ""}`}>
-      <Typography.Text type="secondary">{label}</Typography.Text>
-      <Typography.Text strong={strong}>{value}</Typography.Text>
-    </div>
-  );
+function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode }[] }) {
+  return <Row gutter={[16, 16]}>{items.map((item, index) => <Col xs={12} sm={12} xl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${["green", "blue", "orange", "purple"][index % 4]}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${["green", "blue", "orange", "purple"][index % 4]}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>)}</Row>;
 }

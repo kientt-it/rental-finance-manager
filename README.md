@@ -24,10 +24,20 @@
    - `supabase/migrations/0003_shared_living_expenses.sql`
    - `supabase/migrations/0004_organization_users.sql`
    - `supabase/migrations/0005_current_organization_users.sql`
+   - `supabase/migrations/0006_roles_and_full_crud.sql`
+   - `supabase/migrations/0007_username_and_google_auth.sql`
+   - `supabase/migrations/0008_member_management_repairs.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 
-Trong Supabase Auth, thêm `http://localhost:3000/auth/callback` vào Redirect URLs để xác nhận email local hoạt động.
+Trong Supabase Auth, thêm `http://localhost:3000/auth/callback` vào Redirect URLs để OAuth local quay lại ứng dụng đúng địa chỉ.
+
+### Cấu hình đăng nhập
+
+- Vào **Authentication → Providers → Email** và tắt **Confirm email** để tài khoản username đăng ký xong có thể đăng nhập ngay.
+- Tài khoản mật khẩu dùng tên đăng nhập nội bộ; email liên hệ là tùy chọn và không dùng để xác nhận.
+- Để bật Google, cấu hình Google provider trong **Authentication → Providers → Google**, sau đó thêm callback URL do Supabase cung cấp vào Google Cloud Console.
+- Trong **Authentication → URL Configuration**, thêm `http://localhost:3000/auth/callback` và callback production vào Redirect URLs.
 
    Kiểm tra production
 
