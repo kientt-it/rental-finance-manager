@@ -856,6 +856,48 @@ select {
   font-weight: 800;
 }
 
+.people-cost-actions {
+  justify-content: flex-end;
+}
+
+.payment-qr-frame {
+  display: grid;
+  width: min(300px, 100%);
+  min-height: 240px;
+  place-items: center;
+  padding: 14px;
+  border: 1px solid #dfe8e4;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.payment-qr-frame .ant-image,
+.payment-qr-frame .ant-image-img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.payment-qr-skeleton {
+  width: min(280px, 70vw) !important;
+  height: min(280px, 70vw) !important;
+}
+
+.payment-qr-controls {
+  width: 100%;
+  justify-content: center;
+}
+
+.visually-hidden-file {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .auth-shell,
 .auth-row {
   min-height: 100vh;

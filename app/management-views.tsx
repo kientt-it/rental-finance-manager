@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import {
   Alert,
@@ -14,6 +14,7 @@ import {
   Empty,
   Flex,
   Form,
+  Image,
   Input,
   Modal,
   Popconfirm,
@@ -34,14 +35,17 @@ import {
   CheckCircleFilled,
   DeleteOutlined,
   DisconnectOutlined,
+  DownloadOutlined,
   EditOutlined,
   HomeOutlined,
   InfoCircleOutlined,
   LinkOutlined,
   PlusOutlined,
+  QrcodeOutlined,
   SearchOutlined,
   TeamOutlined,
   UserAddOutlined,
+  UploadOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
@@ -113,6 +117,16 @@ type ExpenseFormValues = {
 
 type Settlement = { member_id: string; is_settled: boolean };
 type PersonCost = OrganizationUser & { allocated: number; advanced: number; balance: number; paid: boolean };
+type PaymentQrSetting = { qr_image_data: string; file_name: string | null };
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Không thể đọc ảnh mã QR."));
+    reader.readAsDataURL(file);
+  });
+}
 
 function chargeableMembers(users: OrganizationUser[]) {
   return users.filter((user) => user.role !== "admin");
@@ -488,8 +502,15 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
   return { people, expenses, loading, reload: load };
 }
 
-export function PeopleCostsView({ organizationId, propertyId, users, onNotice }: SharedProps & { users: OrganizationUser[] }) {
+export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr }: SharedProps & { users: OrganizationUser[]; canManageQr: boolean }) {
   const [filter, setFilter] = useState<"Tất cả" | "Chưa đóng" | "Đã đóng">("Tất cả");
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrFileName, setQrFileName] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(true);
+  const [qrSaving, setQrSaving] = useState(false);
+  const [qrError, setQrError] = useState("");
+  const qrInputRef = useRef<HTMLInputElement>(null);
   const { people, expenses, loading, reload } = usePeopleCosts(organizationId, propertyId, users, onNotice);
   const visible = people.filter((person) => filter === "Tất cả" || (filter === "Đã đóng" ? person.paid : !person.paid));
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -497,6 +518,98 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice }:
   const unpaidTotal = unpaid.reduce((sum, person) => sum + person.balance, 0);
   const paidPercent = people.length ? Math.round(people.filter((person) => person.paid).length / people.length * 100) : 0;
   const receiver = [...people].sort((a, b) => a.balance - b.balance)[0];
+
+  const loadPaymentQr = useCallback(async () => {
+    if (!propertyId) return;
+    setQrLoading(true);
+    setQrError("");
+    const { data, error } = await createClient()
+      .from("payment_qr_settings")
+      .select("qr_image_data, file_name")
+      .eq("property_id", propertyId)
+      .maybeSingle();
+    if (error) {
+      setQrImage(null);
+      setQrFileName(null);
+      setQrError("Không tải được mã QR. Quản trị viên cần chạy migration 0011_payment_qr_settings.sql.");
+    } else {
+      const setting = data as PaymentQrSetting | null;
+      setQrImage(setting?.qr_image_data ?? null);
+      setQrFileName(setting?.file_name ?? null);
+    }
+    setQrLoading(false);
+  }, [propertyId]);
+
+  useEffect(() => { void loadPaymentQr(); }, [loadPaymentQr]);
+
+  async function importPaymentQr(file: File) {
+    if (!canManageQr) {
+      onNotice("Chỉ quản trị viên mới được thay đổi mã QR.");
+      return;
+    }
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      onNotice("Chỉ hỗ trợ ảnh QR định dạng PNG, JPG hoặc WebP.");
+      return;
+    }
+    if (file.size > 1.5 * 1024 * 1024) {
+      onNotice("Ảnh QR tối đa 1,5 MB. Hãy chọn ảnh nhỏ hơn.");
+      return;
+    }
+
+    setQrSaving(true);
+    try {
+      const imageData = await fileToDataUrl(file);
+      const { error } = await createClient().from("payment_qr_settings").upsert({
+        property_id: propertyId,
+        organization_id: organizationId,
+        qr_image_data: imageData,
+        file_name: file.name.slice(0, 160),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "property_id" });
+      if (error) {
+        setQrError("Không thể lưu ảnh QR. Hãy kiểm tra migration 0011 và quyền quản trị viên.");
+        onNotice("Không thể lưu ảnh mã QR.");
+        return;
+      }
+      setQrImage(imageData);
+      setQrFileName(file.name);
+      setQrError("");
+      onNotice("Đã cập nhật mã QR thanh toán.");
+    } catch {
+      onNotice("Không thể đọc ảnh mã QR.");
+    } finally {
+      setQrSaving(false);
+    }
+  }
+
+  async function removePaymentQr() {
+    if (!canManageQr) {
+      onNotice("Chỉ quản trị viên mới được xóa mã QR.");
+      return;
+    }
+    setQrSaving(true);
+    const { error } = await createClient().from("payment_qr_settings").delete().eq("property_id", propertyId);
+    setQrSaving(false);
+    if (error) {
+      onNotice("Không thể xóa mã QR.");
+      return;
+    }
+    setQrImage(null);
+    setQrFileName(null);
+    setQrError("");
+    onNotice("Đã xóa mã QR thanh toán.");
+  }
+
+  function downloadPaymentQr() {
+    if (!qrImage) return;
+    const link = document.createElement("a");
+    link.href = qrImage;
+    link.download = qrFileName?.replace(/[\\/:*?"<>|]/g, "-") || "ma-qr-thanh-toan.png";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
 
   async function togglePaid(person: PersonCost, paid: boolean) {
     const { error } = await createClient().from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: currentPeriod.format("YYYY-MM-DD"), is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
@@ -523,9 +636,52 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice }:
         { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined /> },
         { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined /> },
       ]} />
-      <Card className="section-card" title={<div><span>Chi phí từng người</span><Typography.Text type="secondary" className="card-title-note">Tick để cập nhật trạng thái đã thanh toán</Typography.Text></div>} extra={<Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} />}>
+      <Card className="section-card" title={<div><span>Chi phí từng người</span><Typography.Text type="secondary" className="card-title-note">Tick để cập nhật trạng thái đã thanh toán</Typography.Text></div>} extra={<Space wrap className="people-cost-actions"><Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>Mã QR</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}>
         <Table rowKey="user_id" loading={loading} columns={columns} dataSource={visible} pagination={false} scroll={{ x: 950 }} locale={{ emptyText: <Empty description="Chưa có dữ liệu đối soát" /> }} />
       </Card>
+
+      <Modal
+        title={<Space><QrcodeOutlined /><span>Mã QR thanh toán</span></Space>}
+        open={qrOpen}
+        onCancel={() => setQrOpen(false)}
+        centered
+        width={460}
+        className="payment-qr-modal"
+        footer={<Button onClick={() => setQrOpen(false)}>Đóng</Button>}
+      >
+        <div className="qr-content">
+          {qrLoading ? <Skeleton.Image active className="payment-qr-skeleton" /> : qrImage ? (
+            <>
+              <div className="payment-qr-frame"><Image src={qrImage} alt="Mã QR thanh toán" preview /></div>
+            </>
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={canManageQr ? "Chưa có mã QR. Hãy tải ảnh QR lên." : "Quản trị viên chưa cập nhật mã QR."} />}
+
+          {qrError && <Alert type="error" showIcon title={qrError} />}
+
+          {(qrImage || canManageQr) && (
+            <Space wrap className="payment-qr-controls">
+              {qrImage && <Button icon={<DownloadOutlined />} onClick={downloadPaymentQr}>Tải QR về máy</Button>}
+              {canManageQr && (
+                <>
+                  <input
+                    ref={qrInputRef}
+                    className="visually-hidden-file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (file) void importPaymentQr(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  <Button type="primary" icon={<UploadOutlined />} loading={qrSaving} onClick={() => qrInputRef.current?.click()}>{qrImage ? "Thay ảnh QR" : "Tải ảnh QR lên"}</Button>
+                  {qrImage && <Popconfirm title="Xóa mã QR hiện tại?" okText="Xóa" cancelText="Hủy" onConfirm={() => void removePaymentQr()}><Button danger icon={<DeleteOutlined />} loading={qrSaving}>Xóa ảnh</Button></Popconfirm>}
+                </>
+              )}
+            </Space>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -280,7 +280,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
           )}
           {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
           {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} />}
-          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} canManageQr={currentRole === "admin"} />}
           {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
           {activeTab === "Quản lý thành viên" && currentRole === "admin" && <MembersView users={organizationUsers} currentUserEmail={userEmail} onNotice={setNotice} onChanged={() => void loadDashboard()} />}
         </Layout.Content>

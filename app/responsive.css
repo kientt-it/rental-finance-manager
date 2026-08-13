@@ -593,6 +593,37 @@ body {
     height: auto;
   }
 
+  .people-cost-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .payment-qr-modal {
+    top: 0;
+    max-width: calc(100vw - 24px);
+    margin: 0 auto;
+    padding-bottom: 0;
+  }
+
+  .payment-qr-modal .ant-modal-content {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+
+  .payment-qr-modal .ant-modal-body {
+    padding-top: 8px;
+  }
+
+  .payment-qr-frame {
+    width: min(280px, 76vw);
+    min-height: 210px;
+    padding: 10px;
+  }
+
+  .payment-qr-controls .ant-btn {
+    flex: 1 1 140px;
+  }
+
   .ant-descriptions-bordered .ant-descriptions-item-label,
   .ant-descriptions-bordered .ant-descriptions-item-content {
     padding: 9px 10px;
