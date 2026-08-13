@@ -49,6 +49,7 @@ import {
   WalletOutlined,
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
+import { formatMoneyInput } from "@/lib/money";
 
 const vnd = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const compactVnd = new Intl.NumberFormat("vi-VN", { notation: "compact", style: "currency", currency: "VND", maximumFractionDigits: 1 });
@@ -247,7 +248,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users }: Share
     <div className="page-stack">
       <ViewSummary items={[
         { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined /> },
-        { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% lấp đầy` : "Chưa có phòng", icon: <HomeOutlined /> },
+        { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% đang sử dụng` : "Chưa có phòng", icon: <HomeOutlined /> },
         { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined /> },
         { label: "Giá bình quân", value: rooms.length ? compactVnd.format(totalRent / rooms.length) : "0 ₫", note: "Mỗi phòng / tháng", icon: <BankOutlined /> },
       ]} />
@@ -290,7 +291,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users }: Share
           <Form.Item name="member_ids" label="Thành viên đang ở" extra="Tạo hồ sơ trước tại mục Quản lý thành viên">
             <Select mode="multiple" allowClear optionFilterProp="label" placeholder="Chọn thành viên" options={users.map((user) => ({ value: user.user_id, label: user.full_name }))} />
           </Form.Item>
-          <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
+          <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" normalize={(value) => formatMoneyInput(String(value ?? ""))} rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingRoom ? "Lưu thay đổi" : "Thêm phòng"}</Button>
         </Form>
       </Modal>
@@ -453,7 +454,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
         <Form form={form} layout="vertical" onFinish={saveExpense}>
           <Row gutter={12}>
             <Col xs={24} sm={14}><Form.Item name="category" label="Nội dung" rules={[{ required: true }]}><Input placeholder="Ví dụ: Tiền điện" /></Form.Item></Col>
-            <Col xs={24} sm={10}><Form.Item name="amount" label="Số tiền (VNĐ)" rules={[{ required: true }]}><Input inputMode="numeric" placeholder="1.500.000" /></Form.Item></Col>
+            <Col xs={24} sm={10}><Form.Item name="amount" label="Số tiền (VNĐ)" normalize={(value) => formatMoneyInput(String(value ?? ""))} rules={[{ required: true }]}><Input inputMode="numeric" placeholder="1.500.000" /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
             <Col xs={24} sm={12}><Form.Item name="expense_date" label="Ngày chi" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item></Col>
@@ -461,7 +462,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
           </Row>
           <Form.Item name="payer_member_id" label="Người thanh toán" rules={[{ required: true }]}><Select options={expenseUsers.map((user) => ({ value: user.user_id, label: `${user.full_name}${user.is_linked ? "" : " — chưa liên kết tài khoản"}` }))} /></Form.Item>
           <div className="participant-field-heading"><Typography.Text strong><span className="required-mark">*</span> Người tham gia</Typography.Text><Button type="link" size="small" onClick={() => form.setFieldValue("participant_ids", selectedParticipants.length === expenseUsers.length ? [] : expenseUsers.map((user) => user.user_id))}>{selectedParticipants.length === expenseUsers.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}</Button></div>
-          <Form.Item name="participant_ids" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${expenseUsers.length} người · không tính quản trị viên`}><Checkbox.Group className="participant-grid" options={expenseUsers.map((user) => ({ value: user.user_id, label: user.full_name }))} /></Form.Item>
+          <Form.Item name="participant_ids" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${expenseUsers.length} người`}><Checkbox.Group className="participant-grid" options={expenseUsers.map((user) => ({ value: user.user_id, label: user.full_name }))} /></Form.Item>
           <Row gutter={12}>
             <Col xs={24} sm={12}><Form.Item name="reference_code" label="Mã tham chiếu"><Input /></Form.Item></Col>
             <Col xs={24} sm={12}><Form.Item name="note" label="Ghi chú"><Input /></Form.Item></Col>

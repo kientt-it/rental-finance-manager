@@ -1,18 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Alert,
   Avatar,
   Button,
   Card,
   Col,
+  Descriptions,
   Drawer,
   Empty,
   Flex,
   Form,
   Grid,
+  Image,
   Input,
   Layout,
   Menu,
@@ -33,17 +35,20 @@ import {
   CreditCardOutlined,
   DashboardOutlined,
   DollarOutlined,
+  DownloadOutlined,
   FileTextOutlined,
   HomeOutlined,
   LogoutOutlined,
   MenuOutlined,
   PlusOutlined,
+  QrcodeOutlined,
   ThunderboltOutlined,
   TeamOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
+import { formatMoneyInput } from "@/lib/money";
 import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 
 type RoomStatus = "vacant" | "occupied" | "leaving" | "maintenance";
@@ -64,9 +69,21 @@ const menuItems = [
 
 const memberMenuItem = { key: "Quản lý thành viên", icon: <TeamOutlined />, label: "Quản lý thành viên" };
 
+const tabRoutes: Record<string, string> = {
+  "Tổng quan": "/dashboard",
+  "Phòng": "/room",
+  "Chi phí": "/expenses",
+  "Chi phí từng người": "/people-costs",
+  "Báo cáo": "/reports",
+  "Quản lý thành viên": "/members",
+};
+
+const routeTabs = Object.fromEntries(Object.entries(tabRoutes).map(([tab, route]) => [route, tab])) as Record<string, string>;
+
 export default function Dashboard({ userEmail, userName }: { userEmail: string; userName: string }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("Tổng quan");
+  const pathname = usePathname();
+  const [activeTab, setActiveTab] = useState(() => routeTabs[pathname] ?? "Tổng quan");
   const [data, setData] = useState<DashboardData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
@@ -126,12 +143,14 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
 
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => { if (screens.lg) setMobileMenuOpen(false); }, [screens.lg]);
-  useEffect(() => { if (currentRole !== "admin" && activeTab === "Quản lý thành viên") setActiveTab("Tổng quan"); }, [activeTab, currentRole]);
+  useEffect(() => { setActiveTab(routeTabs[pathname] ?? "Tổng quan"); }, [pathname]);
+  useEffect(() => {
+    if (!loading && currentRole !== "admin" && activeTab === "Quản lý thành viên") router.replace("/dashboard");
+  }, [activeTab, currentRole, loading, router]);
 
   const debt = useMemo(() => data.rooms.reduce((sum, room) => sum + Number(room.due), 0), [data.rooms]);
-  const occupied = data.rooms.filter((room) => room.status !== "vacant").length;
-  const occupancy = data.rooms.length ? Math.round(occupied / data.rooms.length * 100) : 0;
   const debtorRooms = data.rooms.filter((room) => room.due > 0 && room.invoice_id);
+  const currentMember = useMemo(() => organizationUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase()) ?? null, [organizationUsers, userEmail]);
   const displayName = userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
   const periodLabel = activeTab.startsWith("Chi phí") ? `KỲ ${month.toUpperCase()}` : month.toUpperCase();
@@ -194,6 +213,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   function chooseTab(label: string) {
     setActiveTab(label);
     setMobileMenuOpen(false);
+    router.push(tabRoutes[label] ?? "/dashboard");
   }
 
   const navigation = (
@@ -267,15 +287,12 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
 
           {activeTab === "Tổng quan" && (
             <Overview
-              data={data}
-              debt={debt}
-              occupied={occupied}
-              occupancy={occupancy}
-              debtorRooms={debtorRooms}
-              loading={loading}
-              onPayment={() => setModal("payment")}
-              onAddRoom={() => setModal("room")}
-              onNotice={setNotice}
+              organizationId={data.organization_id}
+              propertyId={data.property_id}
+              currentMember={currentMember}
+              users={organizationUsers}
+              displayName={displayName}
+              currentRole={currentRole}
             />
           )}
           {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
@@ -298,7 +315,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
             />
           </Form.Item>
           <Form.Item label="Số tiền (VNĐ)" required>
-            <Input autoFocus inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Ví dụ: 1.250.000" prefix={<DollarOutlined />} />
+            <Input autoFocus inputMode="numeric" value={amount} onChange={(event) => setAmount(formatMoneyInput(event.target.value))} placeholder="Ví dụ: 1.250.000" prefix={<DollarOutlined />} />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>Lưu thanh toán</Button>
         </Form>
@@ -311,7 +328,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
             <Input autoFocus value={roomCode} onChange={(event) => setRoomCode(event.target.value)} placeholder="Ví dụ: P.101" prefix={<HomeOutlined />} />
           </Form.Item>
           <Form.Item label="Giá thuê tháng (VNĐ)" required>
-            <Input inputMode="numeric" value={roomRent} onChange={(event) => setRoomRent(event.target.value)} placeholder="Ví dụ: 3.500.000" prefix={<DollarOutlined />} />
+            <Input inputMode="numeric" value={roomRent} onChange={(event) => setRoomRent(formatMoneyInput(event.target.value))} placeholder="Ví dụ: 3.500.000" prefix={<DollarOutlined />} />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>Thêm phòng</Button>
         </Form>
@@ -320,7 +337,226 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   );
 }
 
-function Overview({
+type PersonalExpenseParticipant = { member_id: string; allocated_amount: number };
+type PersonalExpense = {
+  id: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  payer_member_id: string | null;
+  status: "pending" | "completed";
+  reference_code: string | null;
+  expense_member_participants: PersonalExpenseParticipant[];
+};
+
+function Overview({ organizationId, propertyId, currentMember, users, displayName, currentRole }: {
+  organizationId: string;
+  propertyId: string;
+  currentMember: OrganizationUser | null;
+  users: OrganizationUser[];
+  displayName: string;
+  currentRole: "admin" | "member";
+}) {
+  const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
+  const [settled, setSettled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrFileName, setQrFileName] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(true);
+  const [qrOpen, setQrOpen] = useState(false);
+
+  useEffect(() => {
+    async function loadPersonalOverview() {
+      if (!organizationId || !propertyId) return;
+      if (!currentMember || currentRole === "admin") {
+        setExpenses([]);
+        setSettled(false);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setLoadError("");
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const nextMonthStart = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+      const supabase = createClient();
+      const [{ data: expenseRows, error: expenseError }, { data: settlementRow, error: settlementError }] = await Promise.all([
+        supabase.from("expenses")
+          .select("id, category, amount, expense_date, payer_member_id, status, reference_code, expense_member_participants(member_id, allocated_amount)")
+          .eq("organization_id", organizationId)
+          .gte("expense_date", monthStart)
+          .lt("expense_date", nextMonthStart)
+          .order("expense_date", { ascending: false }),
+        supabase.from("household_member_settlements")
+          .select("is_settled")
+          .eq("property_id", propertyId)
+          .eq("member_id", currentMember.user_id)
+          .eq("period", monthStart)
+          .maybeSingle(),
+      ]);
+
+      if (expenseError || settlementError) {
+        setLoadError("Không tải được số liệu cá nhân trong tháng này.");
+      }
+      setExpenses(((expenseRows ?? []) as unknown as PersonalExpense[]).map((expense) => ({
+        ...expense,
+        amount: Number(expense.amount),
+        expense_member_participants: (expense.expense_member_participants ?? []).map((participant) => ({
+          ...participant,
+          allocated_amount: Number(participant.allocated_amount),
+        })),
+      })));
+      setSettled(Boolean((settlementRow as { is_settled?: boolean } | null)?.is_settled));
+      setLoading(false);
+    }
+
+    void loadPersonalOverview();
+  }, [currentMember, currentRole, organizationId, propertyId]);
+
+  useEffect(() => {
+    async function loadPaymentQr() {
+      if (!propertyId) return;
+      setQrLoading(true);
+      const { data, error } = await createClient().from("payment_qr_settings")
+        .select("qr_image_data, file_name")
+        .eq("property_id", propertyId)
+        .maybeSingle();
+      if (error || !data) {
+        setQrImage(null);
+        setQrFileName(null);
+      } else {
+        const setting = data as { qr_image_data: string; file_name: string | null };
+        setQrImage(setting.qr_image_data);
+        setQrFileName(setting.file_name);
+      }
+      setQrLoading(false);
+    }
+
+    void loadPaymentQr();
+  }, [propertyId]);
+
+  const memberMap = useMemo(() => new Map(users.map((user) => [user.user_id, user.full_name])), [users]);
+  const participatingExpenses = useMemo(() => currentMember ? expenses.filter((expense) => expense.expense_member_participants.some((participant) => participant.member_id === currentMember.user_id)) : [], [currentMember, expenses]);
+  const allocated = participatingExpenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((participant) => participant.member_id === currentMember?.user_id)?.allocated_amount ?? 0), 0);
+  const advanced = currentMember ? expenses.filter((expense) => expense.payer_member_id === currentMember.user_id).reduce((sum, expense) => sum + expense.amount, 0) : 0;
+  const balance = allocated - advanced;
+  const remaining = settled ? 0 : Math.max(balance, 0);
+  const receivable = Math.max(-balance, 0);
+  const netCashflow = advanced - allocated;
+  const flowTotal = advanced + allocated;
+  const receiver = useMemo(() => {
+    const chargeableUsers = users.filter((user) => user.role !== "admin");
+    const balances = chargeableUsers.map((user) => {
+      const userAllocated = expenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((participant) => participant.member_id === user.user_id)?.allocated_amount ?? 0), 0);
+      const userAdvanced = expenses.filter((expense) => expense.payer_member_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
+      return { ...user, balance: userAllocated - userAdvanced };
+    });
+    return balances.sort((left, right) => left.balance - right.balance)[0] ?? null;
+  }, [expenses, users]);
+
+  function downloadPaymentQr() {
+    if (!qrImage) return;
+    const link = document.createElement("a");
+    link.href = qrImage;
+    link.download = qrFileName?.replace(/[\\/:*?"<>|]/g, "-") || "ma-qr-thanh-toan.png";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  return (
+    <div className="page-stack personal-overview-page">
+      <section className="personal-overview-hero">
+        <div>
+          <span className="hero-eyebrow">TỔNG QUAN CÁ NHÂN · {month.toUpperCase()}</span>
+          <Typography.Title level={3}>Xin chào, {displayName}</Typography.Title>
+          <Typography.Paragraph>Theo dõi những khoản bạn đã chi, được chia và cần đối soát trong tháng này.</Typography.Paragraph>
+        </div>
+        <div className="personal-balance-card">
+          <span>{settled ? "TRẠNG THÁI THÁNG NÀY" : "CÒN PHẢI ĐÓNG"}</span>
+          <strong>{loading ? "—" : settled ? "Đã đóng đủ" : money.format(remaining)}</strong>
+          <small>{settled ? "Đã được xác nhận thanh toán" : remaining > 0 ? "Cần chuyển cho người nhận hoàn" : receivable > 0 ? `Được nhận lại ${money.format(receivable)}` : "Không còn khoản phải đóng"}</small>
+        </div>
+      </section>
+
+      {currentRole === "admin" && <Alert type="info" showIcon title="Tài khoản quản trị viên không tham gia chia chi phí và không có số liệu cá nhân." />}
+      {!currentMember && currentRole !== "admin" && <Alert type="warning" showIcon title="Tài khoản này chưa được gán với hồ sơ thành viên." />}
+      {loadError && <Alert type="error" showIcon title={loadError} />}
+
+      <Row gutter={[16, 16]}>
+        <MetricCard loading={loading} title="Số tiền đã chi" value={advanced} note={`${expenses.filter((expense) => expense.payer_member_id === currentMember?.user_id).length} khoản bạn thanh toán`} icon={<WalletOutlined />} tone="green" />
+        <MetricCard loading={loading} title="Phần được chia" value={allocated} note={`${participatingExpenses.length} khoản bạn tham gia`} icon={<TeamOutlined />} tone="blue" />
+        <MetricCard loading={loading} title="Còn phải đóng" value={remaining} note={settled ? "Đã xác nhận đóng đủ" : "Sau khi trừ số tiền đã ứng"} icon={<CreditCardOutlined />} tone="orange" />
+        <MetricCard loading={loading} title="Được nhận lại" value={receivable} note={receivable > 0 ? "Số tiền các thành viên hoàn lại" : "Không phát sinh hoàn tiền"} icon={<BankOutlined />} tone="purple" />
+      </Row>
+
+      <Card className="section-card personal-qr-overview-card">
+        <Flex align="center" justify="space-between" gap={18} wrap>
+          <Flex align="center" gap={14} className="personal-qr-summary">
+            <span className="personal-qr-icon"><QrcodeOutlined /></span>
+            <div>
+              <Typography.Title level={5}>Mã QR thanh toán</Typography.Title>
+              <Typography.Text type="secondary">
+                Chuyển khoản cho Dương Thế Hải
+              </Typography.Text>
+            </div>
+          </Flex>
+          <Flex align="center" gap={20} wrap className="personal-qr-action">
+            <div><Typography.Text type="secondary">Số tiền của bạn</Typography.Text><Typography.Text strong>{money.format(remaining)}</Typography.Text></div>
+            <Button type="primary" icon={<QrcodeOutlined />} disabled={!qrImage} loading={qrLoading} onClick={() => setQrOpen(true)}>Xem mã QR</Button>
+          </Flex>
+        </Flex>
+      </Card>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card className="section-card personal-expense-card" title={<div><span>Khoản chi bạn tham gia</span><Typography.Text type="secondary" className="card-title-note">Các khoản được chia cho tài khoản của bạn trong {month}</Typography.Text></div>} extra={<Tag color="success">{participatingExpenses.length} khoản</Tag>}>
+            {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : participatingExpenses.length ? (
+              <div className="personal-expense-list">
+                <div className="personal-expense-header"><span>Khoản chi</span><span>Người thanh toán</span><span>Tổng chi</span><span>Phần của bạn</span><span>Trạng thái</span></div>
+                {participatingExpenses.map((expense) => {
+                  const personalShare = expense.expense_member_participants.find((participant) => participant.member_id === currentMember?.user_id)?.allocated_amount ?? 0;
+                  return <div className="personal-expense-row" key={expense.id}>
+                    <div className="personal-expense-main"><Typography.Text strong>{expense.category}</Typography.Text><Typography.Text type="secondary">{new Intl.DateTimeFormat("vi-VN").format(new Date(`${expense.expense_date}T00:00:00`))}{expense.reference_code ? ` · Mã ${expense.reference_code}` : ""}</Typography.Text></div>
+                    <div data-label="Người thanh toán"><Typography.Text>{memberMap.get(expense.payer_member_id ?? "") ?? "—"}</Typography.Text></div>
+                    <div data-label="Tổng chi"><Typography.Text>{money.format(expense.amount)}</Typography.Text></div>
+                    <div data-label="Phần của bạn"><Typography.Text strong>{money.format(personalShare)}</Typography.Text></div>
+                    <div data-label="Trạng thái"><Tag color={expense.status === "completed" ? "success" : "warning"}>{expense.status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag></div>
+                  </div>;
+                })}
+              </div>
+            ) : <Empty description="Bạn chưa tham gia khoản chi nào trong tháng này" />}
+          </Card>
+        </Col>
+        <Col xs={24} xl={8}>
+          <Card className="section-card personal-cashflow-card" title="Dòng tiền tháng này" extra={<Tag color={netCashflow >= 0 ? "success" : "warning"}>CÁ NHÂN</Tag>}>
+            <Statistic title="Dòng tiền ròng" value={netCashflow} formatter={(value) => money.format(Number(value))} />
+            <Typography.Text type="secondary">Số tiền đã chi trừ phần chi phí của bạn</Typography.Text>
+            <Progress percent={flowTotal ? Math.round(advanced / flowTotal * 100) : 0} showInfo={false} strokeColor="#087a58" railColor="#f6d9b9" />
+            <Flex vertical gap={16} className="personal-flow-lines">
+              <CashflowLine color="#087a58" label="Bạn đã chi" value={advanced} />
+              <CashflowLine color="#e09036" label="Phần được chia" value={allocated} />
+              <CashflowLine color={netCashflow >= 0 ? "#087a58" : "#d14343"} label={netCashflow >= 0 ? "Chênh lệch được nhận" : "Chênh lệch cần đóng"} value={Math.abs(netCashflow)} />
+            </Flex>
+          </Card>
+        </Col>
+      </Row>
+
+      <Modal title={<Space><QrcodeOutlined /><span>Mã QR thanh toán</span></Space>} open={qrOpen} onCancel={() => setQrOpen(false)} centered width={460} className="payment-qr-modal" footer={<Button onClick={() => setQrOpen(false)}>Đóng</Button>}>
+        <div className="qr-content">
+          {qrImage ? <div className="payment-qr-frame"><Image src={qrImage} alt="Mã QR thanh toán" preview /></div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có mã QR thanh toán" />}
+          <Statistic title="Số tiền cần chuyển" value={remaining} formatter={(value) => money.format(Number(value))} />
+          {qrImage && <Button icon={<DownloadOutlined />} onClick={downloadPaymentQr}>Tải QR về máy</Button>}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function LegacyOverview({
   data,
   debt,
   occupied,

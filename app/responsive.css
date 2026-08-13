@@ -84,6 +84,11 @@ body {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 0.48fr);
     gap: 22px;
   }
+
+  .personal-overview-hero {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
 }
 
 @media (max-width: 767px) {
@@ -207,6 +212,61 @@ body {
     min-height: 0;
     padding: 22px;
     border-radius: 18px;
+  }
+
+  .personal-overview-hero {
+    min-height: auto;
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .personal-balance-card {
+    padding: 18px;
+  }
+
+  .personal-expense-header {
+    display: none;
+  }
+
+  .personal-expense-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+    padding: 16px 4px;
+  }
+
+  .personal-expense-main {
+    grid-column: 1 / -1;
+  }
+
+  .personal-expense-row > div:not(.personal-expense-main)::before {
+    display: block;
+    margin-bottom: 3px;
+    color: #85938e;
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .personal-expense-row > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .personal-qr-overview-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .personal-qr-summary,
+  .personal-qr-action {
+    width: 100%;
+  }
+
+  .personal-qr-action {
+    justify-content: space-between;
+  }
+
+  .personal-qr-action > div {
+    text-align: left;
   }
 
   .overview-hero::before {

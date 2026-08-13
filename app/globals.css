@@ -268,6 +268,152 @@ select {
   color: #fff;
 }
 
+.personal-overview-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, .7fr);
+  align-items: center;
+  gap: 32px;
+  min-height: 230px;
+  padding: clamp(26px, 4vw, 44px);
+  overflow: hidden;
+  border-radius: 24px;
+  color: #fff;
+  background: radial-gradient(circle at 82% 0%, rgba(108, 209, 170, .24), transparent 34%), linear-gradient(135deg, #0b4839, #087a58);
+  box-shadow: 0 18px 42px rgba(12, 77, 59, .16);
+}
+
+.personal-overview-hero h3.ant-typography {
+  margin: 10px 0 6px;
+  color: #fff;
+  font-size: clamp(25px, 3vw, 36px);
+}
+
+.personal-overview-hero p.ant-typography {
+  max-width: 650px;
+  margin: 0;
+  color: #d8eee6;
+}
+
+.personal-balance-card {
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .1);
+  backdrop-filter: blur(8px);
+}
+
+.personal-balance-card span {
+  color: #c9e8dc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.personal-balance-card strong {
+  color: #fff;
+  font-size: clamp(25px, 3vw, 36px);
+  line-height: 1.15;
+}
+
+.personal-balance-card small {
+  color: #d7ede5;
+}
+
+.personal-expense-list {
+  min-width: 0;
+}
+
+.personal-expense-header,
+.personal-expense-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.45fr) minmax(130px, 1fr) 120px 130px 110px;
+  align-items: center;
+  gap: 14px;
+}
+
+.personal-expense-header {
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #61736c;
+  background: #f5f8f6;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.personal-expense-row {
+  min-height: 76px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e8eeeb;
+}
+
+.personal-expense-row:last-child {
+  border-bottom: 0;
+}
+
+.personal-expense-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.personal-expense-main .ant-typography-secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-cashflow-card .ant-card-body {
+  display: grid;
+  gap: 18px;
+}
+
+.personal-cashflow-card .ant-statistic-content {
+  color: #0b3d30;
+  font-size: clamp(27px, 3vw, 36px);
+  font-weight: 800;
+}
+
+.personal-flow-lines {
+  padding-top: 6px;
+}
+
+.personal-qr-overview-card .ant-card-body {
+  padding: 18px 22px;
+}
+
+.personal-qr-summary {
+  min-width: 0;
+}
+
+.personal-qr-summary h5.ant-typography {
+  margin: 0 0 3px;
+}
+
+.personal-qr-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 13px;
+  color: #087a58;
+  background: #e2f3ec;
+  font-size: 22px;
+}
+
+.personal-qr-action > div {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.personal-qr-action > div .ant-typography:last-child {
+  color: #0b3d30;
+  font-size: 18px;
+}
+
 .hero-status-list {
   margin-top: 23px;
 }
