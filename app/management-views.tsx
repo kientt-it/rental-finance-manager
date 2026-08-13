@@ -33,9 +33,11 @@ import {
   BankOutlined,
   CheckCircleFilled,
   DeleteOutlined,
+  DisconnectOutlined,
   EditOutlined,
   HomeOutlined,
   InfoCircleOutlined,
+  LinkOutlined,
   PlusOutlined,
   SearchOutlined,
   TeamOutlined,
@@ -50,12 +52,14 @@ const currentPeriod = dayjs().startOf("month");
 
 export type OrganizationUser = {
   user_id: string;
+  auth_user_id: string | null;
   full_name: string;
   email: string;
   role: "admin" | "member" | string;
   phone: string;
   bank_account: string;
   bank_name: string;
+  is_linked: boolean;
 };
 
 type NoticeHandler = (message: string) => void;
@@ -67,6 +71,7 @@ type RentalRoom = {
   floor: number;
   room_type: string;
   residents: string[];
+  member_ids: string[];
   base_rent: number;
   coefficient: number;
   status: "vacant" | "occupied" | "leaving" | "maintenance";
@@ -77,37 +82,41 @@ type RoomFormValues = {
   floor: number;
   room_type: string;
   coefficient: string;
-  residents?: string;
+  member_ids: string[];
   base_rent: string;
   status: RentalRoom["status"];
 };
 
-type ExpenseParticipant = { user_id: string; allocated_amount: number };
+type ExpenseParticipant = { member_id: string; allocated_amount: number };
 type ExpenseRecord = {
   id: string;
   category: string;
   amount: number;
   expense_date: string;
-  payer_user_id: string | null;
+  payer_member_id: string | null;
   status: "pending" | "completed";
   reference_code: string | null;
   note: string | null;
-  expense_participants: ExpenseParticipant[];
+  expense_member_participants: ExpenseParticipant[];
 };
 
 type ExpenseFormValues = {
   category: string;
   amount: string;
   expense_date: Dayjs;
-  payer_user_id: string;
+  payer_member_id: string;
   participant_ids: string[];
   status: ExpenseRecord["status"];
   reference_code?: string;
   note?: string;
 };
 
-type Settlement = { user_id: string; is_settled: boolean };
+type Settlement = { member_id: string; is_settled: boolean };
 type PersonCost = OrganizationUser & { allocated: number; advanced: number; balance: number; paid: boolean };
+
+function chargeableMembers(users: OrganizationUser[]) {
+  return users.filter((user) => user.role !== "admin");
+}
 
 function parseMoney(value: string) {
   return Number(value.replace(/[^0-9]/g, ""));
@@ -121,7 +130,7 @@ function errorMessage(error: { message?: string } | null, fallback: string) {
   return fallback;
 }
 
-export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps) {
+export function RoomsView({ organizationId, propertyId, onNotice, users }: SharedProps & { users: OrganizationUser[] }) {
   const [display, setDisplay] = useState<"Danh sách" | "Sơ đồ tầng">("Danh sách");
   const [rooms, setRooms] = useState<RentalRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,16 +143,20 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
     if (!propertyId) return;
     setLoading(true);
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("rooms")
-      .select("id, code, floor, room_type, residents, base_rent, coefficient, status")
-      .eq("property_id", propertyId)
-      .order("floor", { ascending: false })
-      .order("code");
-    if (error) onNotice("Không tải được danh sách phòng. Hãy chạy migration 0006.");
-    setRooms(((data ?? []) as RentalRoom[]).map((room) => ({ ...room, base_rent: Number(room.base_rent), coefficient: Number(room.coefficient), residents: room.residents ?? [] })));
+    const [{ data, error }, { data: assignments, error: assignmentError }] = await Promise.all([
+      supabase.from("rooms").select("id, code, floor, room_type, residents, base_rent, coefficient, status").eq("property_id", propertyId).order("floor", { ascending: false }).order("code"),
+      supabase.from("room_member_assignments").select("room_id, member_id").eq("organization_id", organizationId),
+    ]);
+    if (error || assignmentError) onNotice("Không tải được danh sách phòng. Hãy chạy migration 0009.");
+    const idsByRoom = new Map<string, string[]>();
+    (assignments ?? []).forEach((item) => idsByRoom.set(item.room_id, [...(idsByRoom.get(item.room_id) ?? []), item.member_id]));
+    const namesById = new Map(users.map((user) => [user.user_id, user.full_name]));
+    setRooms(((data ?? []) as Omit<RentalRoom, "member_ids">[]).map((room) => {
+      const member_ids = idsByRoom.get(room.id) ?? [];
+      return { ...room, member_ids, base_rent: Number(room.base_rent), coefficient: Number(room.coefficient), residents: member_ids.map((id) => namesById.get(id)).filter(Boolean) as string[] };
+    }));
     setLoading(false);
-  }, [onNotice, propertyId]);
+  }, [onNotice, organizationId, propertyId, users]);
 
   useEffect(() => { void loadRooms(); }, [loadRooms]);
 
@@ -154,7 +167,7 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
 
   function openCreate() {
     setEditingRoom(null);
-    form.setFieldsValue({ code: "", floor: 1, room_type: "Phòng tiêu chuẩn", coefficient: "1", residents: "", base_rent: "", status: "vacant" });
+    form.setFieldsValue({ code: "", floor: 1, room_type: "Phòng tiêu chuẩn", coefficient: "1", member_ids: [], base_rent: "", status: "vacant" });
     setModalOpen(true);
   }
 
@@ -165,7 +178,7 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
       floor: room.floor,
       room_type: room.room_type,
       coefficient: String(room.coefficient),
-      residents: room.residents.join(", "),
+      member_ids: room.member_ids,
       base_rent: room.base_rent.toLocaleString("vi-VN"),
       status: room.status,
     });
@@ -173,7 +186,7 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
   }
 
   async function saveRoom(values: RoomFormValues) {
-    const residents = (values.residents ?? "").split(/[,;\n]/).map((name) => name.trim()).filter(Boolean);
+    const residents = users.filter((user) => values.member_ids.includes(user.user_id)).map((user) => user.full_name);
     const payload = {
       organization_id: organizationId,
       property_id: propertyId,
@@ -183,16 +196,27 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
       coefficient: Number(values.coefficient.replace(",", ".")),
       residents,
       base_rent: parseMoney(values.base_rent),
-      status: values.status,
+      status: values.member_ids.length
+        ? (values.status === "vacant" ? "occupied" : values.status)
+        : (values.status === "occupied" ? "vacant" : values.status),
     };
     if (!payload.code || !payload.base_rent || !payload.coefficient) return onNotice("Vui lòng nhập đầy đủ thông tin phòng.");
     setSaving(true);
     const supabase = createClient();
     const result = editingRoom
-      ? await supabase.from("rooms").update(payload).eq("id", editingRoom.id)
-      : await supabase.from("rooms").insert(payload);
+      ? await supabase.from("rooms").update(payload).eq("id", editingRoom.id).select("id").single()
+      : await supabase.from("rooms").insert(payload).select("id").single();
+    if (result.error) {
+      setSaving(false);
+      return onNotice(errorMessage(result.error, "Không thể lưu phòng. Vui lòng kiểm tra lại dữ liệu."));
+    }
+    const roomId = result.data.id;
+    const { error: clearError } = await supabase.from("room_member_assignments").delete().eq("room_id", roomId);
+    const assignmentResult = values.member_ids.length
+      ? await supabase.from("room_member_assignments").insert(values.member_ids.map((memberId) => ({ room_id: roomId, member_id: memberId, organization_id: organizationId })))
+      : { error: null };
     setSaving(false);
-    if (result.error) return onNotice(errorMessage(result.error, "Không thể lưu phòng. Vui lòng kiểm tra lại dữ liệu."));
+    if (clearError || assignmentResult.error) return onNotice("Đã lưu phòng nhưng chưa thể cập nhật thành viên đang ở.");
     setModalOpen(false);
     onNotice(editingRoom ? `Đã cập nhật phòng ${payload.code}.` : `Đã thêm phòng ${payload.code}.`);
     await loadRooms();
@@ -249,7 +273,9 @@ export function RoomsView({ organizationId, propertyId, onNotice }: SharedProps)
           <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
             <Select options={[{ value: "vacant", label: "Trống" }, { value: "occupied", label: "Đang ở" }, { value: "leaving", label: "Sắp trống" }, { value: "maintenance", label: "Bảo trì" }]} />
           </Form.Item>
-          <Form.Item name="residents" label="Người đang ở" extra="Ngăn cách tên bằng dấu phẩy"><Input.TextArea rows={3} placeholder="Ví dụ: Minh, An" /></Form.Item>
+          <Form.Item name="member_ids" label="Thành viên đang ở" extra="Tạo hồ sơ trước tại mục Quản lý thành viên">
+            <Select mode="multiple" allowClear optionFilterProp="label" placeholder="Chọn thành viên" options={users.map((user) => ({ value: user.user_id, label: user.full_name }))} />
+          </Form.Item>
           <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingRoom ? "Lưu thay đổi" : "Thêm phòng"}</Button>
         </Form>
@@ -299,20 +325,21 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ExpenseFormValues>();
   const selectedParticipants = Form.useWatch("participant_ids", form) ?? [];
-  const userMap = useMemo(() => new Map(users.map((user) => [user.user_id, user])), [users]);
+  const expenseUsers = useMemo(() => chargeableMembers(users), [users]);
+  const userMap = useMemo(() => new Map(expenseUsers.map((user) => [user.user_id, user])), [expenseUsers]);
 
   const loadExpenses = useCallback(async () => {
     if (!organizationId) return;
     setLoading(true);
     const { data, error } = await createClient().from("expenses")
-      .select("id, category, amount, expense_date, payer_user_id, status, reference_code, note, expense_participants(user_id, allocated_amount)")
+      .select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)")
       .eq("organization_id", organizationId)
       .order("expense_date", { ascending: false });
     if (error) onNotice("Không tải được chi phí. Hãy chạy migration 0006.");
     const normalized = ((data ?? []) as unknown as ExpenseRecord[]).map((expense) => ({
       ...expense,
       amount: Number(expense.amount),
-      expense_participants: (expense.expense_participants ?? []).map((participant) => ({ ...participant, allocated_amount: Number(participant.allocated_amount) })),
+      expense_member_participants: (expense.expense_member_participants ?? []).map((participant) => ({ ...participant, allocated_amount: Number(participant.allocated_amount) })),
     }));
     setExpenses(normalized);
     setLoading(false);
@@ -330,9 +357,9 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0);
 
   function openCreate() {
-    const currentUser = users.find((user) => user.email === currentUserEmail) ?? users[0];
+    const currentUser = expenseUsers.find((user) => user.email === currentUserEmail) ?? expenseUsers[0];
     setEditingExpense(null);
-    form.setFieldsValue({ category: "", amount: "", expense_date: dayjs(), payer_user_id: currentUser?.user_id, participant_ids: users.map((user) => user.user_id), status: "completed", reference_code: "", note: "" });
+    form.setFieldsValue({ category: "", amount: "", expense_date: dayjs(), payer_member_id: currentUser?.user_id, participant_ids: expenseUsers.map((user) => user.user_id), status: "completed", reference_code: "", note: "" });
     setModalOpen(true);
   }
 
@@ -342,8 +369,8 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
       category: expense.category,
       amount: expense.amount.toLocaleString("vi-VN"),
       expense_date: dayjs(expense.expense_date),
-      payer_user_id: expense.payer_user_id ?? users[0]?.user_id,
-      participant_ids: expense.expense_participants.map((participant) => participant.user_id),
+      payer_member_id: userMap.has(expense.payer_member_id ?? "") ? expense.payer_member_id! : expenseUsers[0]?.user_id,
+      participant_ids: expense.expense_member_participants.map((participant) => participant.member_id).filter((id) => userMap.has(id)),
       status: expense.status,
       reference_code: expense.reference_code ?? "",
       note: expense.note ?? "",
@@ -355,13 +382,13 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     const amount = parseMoney(values.amount);
     if (!amount || !values.participant_ids.length) return onNotice("Nhập số tiền và chọn ít nhất một thành viên.");
     setSaving(true);
-    const { error } = await createClient().rpc("save_expense", {
+    const { error } = await createClient().rpc("save_household_expense", {
       target_expense_id: editingExpense?.id ?? null,
       target_property_id: propertyId,
       target_category: values.category.trim(),
       target_amount: amount,
       target_expense_date: values.expense_date.format("YYYY-MM-DD"),
-      target_payer_user_id: values.payer_user_id,
+      target_payer_member_id: values.payer_member_id,
       target_participant_ids: values.participant_ids,
       target_status: values.status,
       target_reference_code: values.reference_code?.trim() || null,
@@ -384,8 +411,8 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   const columns: TableColumnsType<ExpenseRecord> = [
     { title: "Ngày", dataIndex: "expense_date", width: 115, render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
     { title: "Nội dung", dataIndex: "category", width: 190, render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference_code && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference_code}</Typography.Text>}</div> },
-    { title: "Người thanh toán", dataIndex: "payer_user_id", width: 170, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
-    { title: "Người tham gia", width: 220, render: (_, expense) => expense.expense_participants.map((item) => userMap.get(item.user_id)?.full_name).filter(Boolean).join(", ") || "—" },
+    { title: "Người thanh toán", dataIndex: "payer_member_id", width: 170, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
+    { title: "Người tham gia", width: 220, render: (_, expense) => expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter(Boolean).join(", ") || "—" },
     { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
     { title: "Trạng thái", dataIndex: "status", width: 125, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
     { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
@@ -397,9 +424,9 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
         { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined /> },
         { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled /> },
         { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined /> },
-        { label: "Thành viên", value: `${users.length} người`, note: "Có thể tham gia chia phí", icon: <TeamOutlined /> },
+        { label: "Thành viên", value: `${expenseUsers.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
       ]} />
-      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Dữ liệu được lưu trực tiếp trên Supabase</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!users.length}>Thêm chi phí</Button>}>
+      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Quản trị viên không tham gia chia chi phí</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length}>Thêm chi phí</Button>}>
         <Flex className="table-toolbar" gap={10} wrap>
           <Input allowClear prefix={<SearchOutlined />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm khoản chi..." className="table-search" />
           <DatePicker picker="month" allowClear value={monthFilter} onChange={setMonthFilter} format="MM/YYYY" placeholder="Tất cả thời gian" className="month-filter" />
@@ -418,9 +445,9 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
             <Col xs={24} sm={12}><Form.Item name="expense_date" label="Ngày chi" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item></Col>
             <Col xs={24} sm={12}><Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}><Select options={[{ value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} /></Form.Item></Col>
           </Row>
-          <Form.Item name="payer_user_id" label="Người thanh toán" rules={[{ required: true }]}><Select options={users.map((user) => ({ value: user.user_id, label: `${user.full_name} — ${user.email}` }))} /></Form.Item>
-          <div className="participant-field-heading"><Typography.Text strong><span className="required-mark">*</span> Người tham gia</Typography.Text><Button type="link" size="small" onClick={() => form.setFieldValue("participant_ids", selectedParticipants.length === users.length ? [] : users.map((user) => user.user_id))}>{selectedParticipants.length === users.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}</Button></div>
-          <Form.Item name="participant_ids" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${users.length} người`}><Checkbox.Group className="participant-grid" options={users.map((user) => ({ value: user.user_id, label: user.full_name }))} /></Form.Item>
+          <Form.Item name="payer_member_id" label="Người thanh toán" rules={[{ required: true }]}><Select options={expenseUsers.map((user) => ({ value: user.user_id, label: `${user.full_name}${user.is_linked ? "" : " — chưa liên kết tài khoản"}` }))} /></Form.Item>
+          <div className="participant-field-heading"><Typography.Text strong><span className="required-mark">*</span> Người tham gia</Typography.Text><Button type="link" size="small" onClick={() => form.setFieldValue("participant_ids", selectedParticipants.length === expenseUsers.length ? [] : expenseUsers.map((user) => user.user_id))}>{selectedParticipants.length === expenseUsers.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}</Button></div>
+          <Form.Item name="participant_ids" rules={[{ required: true, message: "Chọn ít nhất một người" }]} extra={`Đã chọn ${selectedParticipants.length}/${expenseUsers.length} người · không tính quản trị viên`}><Checkbox.Group className="participant-grid" options={expenseUsers.map((user) => ({ value: user.user_id, label: user.full_name }))} /></Form.Item>
           <Row gutter={12}>
             <Col xs={24} sm={12}><Form.Item name="reference_code" label="Mã tham chiếu"><Input /></Form.Item></Col>
             <Col xs={24} sm={12}><Form.Item name="note" label="Ghi chú"><Input /></Form.Item></Col>
@@ -442,16 +469,16 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
     setLoading(true);
     const supabase = createClient();
     const [{ data: expenseRows, error: expenseError }, { data: settlementRows, error: settlementError }] = await Promise.all([
-      supabase.from("expenses").select("id, category, amount, expense_date, payer_user_id, status, reference_code, note, expense_participants(user_id, allocated_amount)").eq("organization_id", organizationId).gte("expense_date", currentPeriod.format("YYYY-MM-DD")).lt("expense_date", currentPeriod.add(1, "month").format("YYYY-MM-DD")),
-      supabase.from("member_settlements").select("user_id, is_settled").eq("property_id", propertyId).eq("period", currentPeriod.format("YYYY-MM-DD")),
+      supabase.from("expenses").select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)").eq("organization_id", organizationId).gte("expense_date", currentPeriod.format("YYYY-MM-DD")).lt("expense_date", currentPeriod.add(1, "month").format("YYYY-MM-DD")),
+      supabase.from("household_member_settlements").select("member_id, is_settled").eq("property_id", propertyId).eq("period", currentPeriod.format("YYYY-MM-DD")),
     ]);
     if (expenseError || settlementError) onError?.("Không tải được dữ liệu đối soát. Hãy chạy migration 0006.");
-    const normalizedExpenses = ((expenseRows ?? []) as unknown as ExpenseRecord[]).map((expense) => ({ ...expense, amount: Number(expense.amount), expense_participants: (expense.expense_participants ?? []).map((item) => ({ ...item, allocated_amount: Number(item.allocated_amount) })) }));
-    const paidMap = new Map(((settlementRows ?? []) as Settlement[]).map((item) => [item.user_id, item.is_settled]));
+    const normalizedExpenses = ((expenseRows ?? []) as unknown as ExpenseRecord[]).map((expense) => ({ ...expense, amount: Number(expense.amount), expense_member_participants: (expense.expense_member_participants ?? []).map((item) => ({ ...item, allocated_amount: Number(item.allocated_amount) })) }));
+    const paidMap = new Map(((settlementRows ?? []) as Settlement[]).map((item) => [item.member_id, item.is_settled]));
     setExpenses(normalizedExpenses);
-    setPeople(users.map((user) => {
-      const allocated = normalizedExpenses.reduce((sum, expense) => sum + (expense.expense_participants.find((item) => item.user_id === user.user_id)?.allocated_amount ?? 0), 0);
-      const advanced = normalizedExpenses.filter((expense) => expense.payer_user_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
+    setPeople(chargeableMembers(users).map((user) => {
+      const allocated = normalizedExpenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((item) => item.member_id === user.user_id)?.allocated_amount ?? 0), 0);
+      const advanced = normalizedExpenses.filter((expense) => expense.payer_member_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
       return { ...user, allocated, advanced, balance: allocated - advanced, paid: paidMap.get(user.user_id) ?? false };
     }));
     setLoading(false);
@@ -472,7 +499,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice }:
   const receiver = [...people].sort((a, b) => a.balance - b.balance)[0];
 
   async function togglePaid(person: PersonCost, paid: boolean) {
-    const { error } = await createClient().from("member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, user_id: person.user_id, period: currentPeriod.format("YYYY-MM-DD"), is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,user_id,period" });
+    const { error } = await createClient().from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: currentPeriod.format("YYYY-MM-DD"), is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
     onNotice(paid ? `Đã xác nhận ${person.full_name} thanh toán.` : `Đã chuyển ${person.full_name} về chưa thanh toán.`);
     await reload();
@@ -519,7 +546,7 @@ export function ReportView({ organizationId, propertyId, users }: { organization
         { label: "Tổng chi kỳ này", value: vnd.format(total), note: currentPeriod.format("MM/YYYY"), icon: <WalletOutlined /> },
         { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% cần thu`, icon: <CheckCircleFilled /> },
         { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined /> },
-        { label: "Số thành viên", value: `${users.length} người`, note: "Trong tổ chức", icon: <TeamOutlined /> },
+        { label: "Số thành viên", value: `${people.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
       ]} />
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div><Flex justify="space-between"><Typography.Text>Tiến độ đã thu</Typography.Text><Typography.Text strong>{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
@@ -529,21 +556,24 @@ export function ReportView({ organizationId, propertyId, users }: { organization
   );
 }
 
-type MemberFormValues = { account_identifier?: string; full_name: string; role: "admin" | "member"; phone?: string; bank_account?: string; bank_name?: string };
+type MemberFormValues = { full_name: string; phone?: string; bank_account?: string; bank_name?: string };
+type LinkFormValues = { account_identifier: string; role: "admin" | "member" };
 
-export function MembersView({ users, onNotice, onChanged }: { users: OrganizationUser[]; currentUserEmail: string; onNotice: NoticeHandler; onChanged: () => void }) {
+export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { users: OrganizationUser[]; currentUserEmail: string; onNotice: NoticeHandler; onChanged: () => void }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<OrganizationUser | null>(null);
+  const [linkingUser, setLinkingUser] = useState<OrganizationUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<MemberFormValues>();
+  const [linkForm] = Form.useForm<LinkFormValues>();
 
   useEffect(() => {
     if (!modalOpen) return;
     if (editingUser) {
-      form.setFieldsValue({ full_name: editingUser.full_name, role: editingUser.role === "admin" ? "admin" : "member", phone: editingUser.phone, bank_account: editingUser.bank_account, bank_name: editingUser.bank_name });
+      form.setFieldsValue({ full_name: editingUser.full_name, phone: editingUser.phone, bank_account: editingUser.bank_account, bank_name: editingUser.bank_name });
     } else {
       form.resetFields();
-      form.setFieldValue("role", "member");
     }
   }, [editingUser, form, modalOpen]);
 
@@ -557,55 +587,85 @@ export function MembersView({ users, onNotice, onChanged }: { users: Organizatio
     setModalOpen(true);
   }
 
+  function openLink(user: OrganizationUser) {
+    setLinkingUser(user);
+    linkForm.setFieldsValue({ account_identifier: "", role: "member" });
+    setLinkModalOpen(true);
+  }
+
   async function saveMember(values: MemberFormValues) {
     setSaving(true);
     const supabase = createClient();
     const { error } = editingUser
-      ? await supabase.rpc("update_organization_member", { target_user_id: editingUser.user_id, target_full_name: values.full_name, target_phone: values.phone ?? "", target_bank_account: values.bank_account ?? "", target_bank_name: values.bank_name ?? "", target_role: values.role })
-      : await supabase.rpc("add_organization_member_by_login", { target_identifier: values.account_identifier ?? "", target_full_name: values.full_name, target_role: values.role });
+      ? await supabase.rpc("update_household_member", { target_member_id: editingUser.user_id, target_full_name: values.full_name, target_phone: values.phone ?? "", target_bank_account: values.bank_account ?? "", target_bank_name: values.bank_name ?? "" })
+      : await supabase.rpc("create_household_member", { target_full_name: values.full_name, target_phone: values.phone ?? "", target_bank_account: values.bank_account ?? "", target_bank_name: values.bank_name ?? "" });
     setSaving(false);
     if (error) return onNotice(errorMessage(error, "Không thể lưu thành viên."));
     setModalOpen(false);
-    onNotice(editingUser ? "Đã cập nhật thành viên." : "Đã thêm thành viên vào tổ chức.");
+    onNotice(editingUser ? "Đã cập nhật thành viên." : "Đã tạo thành viên. Có thể xếp phòng và chia tiền ngay.");
+    onChanged();
+  }
+
+  async function linkAccount(values: LinkFormValues) {
+    if (!linkingUser) return;
+    setSaving(true);
+    const { error } = await createClient().rpc("link_household_member_account", { target_member_id: linkingUser.user_id, target_identifier: values.account_identifier, target_role: values.role });
+    setSaving(false);
+    if (error) return onNotice(errorMessage(error, error.message.includes("already linked") ? "Tài khoản này đã được gán cho thành viên khác." : "Không thể liên kết tài khoản."));
+    setLinkModalOpen(false);
+    onNotice(`Đã liên kết tài khoản với ${linkingUser.full_name}.`);
+    onChanged();
+  }
+
+  async function unlinkAccount(user: OrganizationUser) {
+    const { error } = await createClient().rpc("unlink_household_member_account", { target_member_id: user.user_id });
+    if (error) return onNotice(errorMessage(error, "Không thể bỏ liên kết tài khoản."));
+    onNotice(`Đã bỏ liên kết tài khoản của ${user.full_name}. Dữ liệu chi phí và phòng vẫn được giữ nguyên.`);
     onChanged();
   }
 
   async function deleteMember(user: OrganizationUser) {
-    const { error } = await createClient().rpc("delete_organization_member", { target_user_id: user.user_id });
+    const { error } = await createClient().rpc("archive_household_member", { target_member_id: user.user_id });
     if (error) return onNotice(errorMessage(error, "Không thể xóa thành viên."));
     onNotice(`Đã xóa ${user.full_name} khỏi tổ chức.`);
     onChanged();
   }
 
   const columns: TableColumnsType<OrganizationUser> = [
-    { title: "Thành viên", dataIndex: "full_name", render: (name: string, user) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><div><Typography.Text strong>{name}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.email || "Không có email liên hệ"}</Typography.Text></div></Space> },
-    { title: "Vai trò", dataIndex: "role", width: 150, render: (role: string) => <Tag color={role === "admin" ? "success" : "default"}>{role === "admin" ? "Quản trị viên" : "Thành viên"}</Tag> },
+    { title: "Thành viên", dataIndex: "full_name", render: (name: string, user) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><div><Typography.Text strong>{name}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.is_linked ? user.email || "Tài khoản đã liên kết" : "Chưa liên kết tài khoản"}</Typography.Text></div></Space> },
+    { title: "Tài khoản", width: 155, render: (_, user) => <Tag color={user.is_linked ? "success" : "warning"} icon={user.is_linked ? <LinkOutlined /> : undefined}>{user.is_linked ? (user.role === "admin" ? "Quản trị viên" : "Đã liên kết") : "Chưa liên kết"}</Tag> },
     { title: "Số điện thoại", dataIndex: "phone", width: 150, render: (value: string) => value || "—" },
     { title: "Ngân hàng", width: 200, render: (_, user) => user.bank_account ? <div><Typography.Text>{user.bank_account}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.bank_name}</Typography.Text></div> : "—" },
-    { title: "Thao tác", width: 130, render: (_, user) => { const isCurrentUser = user.user_id === users[0]?.user_id; return <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(user)} /><Popconfirm title="Xóa thành viên?" description="Thành viên sẽ mất quyền truy cập tổ chức." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={isCurrentUser} onConfirm={() => void deleteMember(user)}><Button type="text" danger disabled={isCurrentUser} icon={<DeleteOutlined />} /></Popconfirm></Space>; } },
+    { title: "Thao tác", width: 180, render: (_, user) => { const isCurrentUser = user.email === currentUserEmail; return <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(user)} />{user.is_linked ? <Popconfirm title="Bỏ liên kết tài khoản?" description="Dữ liệu thành viên vẫn được giữ nguyên." okText="Bỏ liên kết" cancelText="Hủy" disabled={isCurrentUser} onConfirm={() => void unlinkAccount(user)}><Button type="text" disabled={isCurrentUser} icon={<DisconnectOutlined />} /></Popconfirm> : <Button type="text" icon={<LinkOutlined />} onClick={() => openLink(user)}>Gán</Button>}<Popconfirm title="Ngừng sử dụng thành viên?" description="Hồ sơ sẽ ẩn nhưng lịch sử chi phí vẫn được giữ." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={isCurrentUser} onConfirm={() => void deleteMember(user)}><Button type="text" danger disabled={isCurrentUser} icon={<DeleteOutlined />} /></Popconfirm></Space>; } },
   ];
 
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng thành viên", value: `${users.length} người`, note: "Đang có quyền truy cập", icon: <TeamOutlined /> },
-        { label: "Quản trị viên", value: `${users.filter((user) => user.role === "admin").length} người`, note: "Có toàn quyền quản lý", icon: <UserAddOutlined /> },
-        { label: "Thành viên", value: `${users.filter((user) => user.role !== "admin").length} người`, note: "Tự động thêm khi đăng ký", icon: <Avatar size={20}>M</Avatar> },
+        { label: "Tổng thành viên", value: `${users.length} người`, note: "Có thể xếp phòng và chia phí", icon: <TeamOutlined /> },
+        { label: "Đã liên kết", value: `${users.filter((user) => user.is_linked).length} người`, note: "Có tài khoản đăng nhập", icon: <LinkOutlined /> },
+        { label: "Chờ liên kết", value: `${users.filter((user) => !user.is_linked).length} người`, note: "Đã dùng được trong nghiệp vụ", icon: <Avatar size={20}>M</Avatar> },
         { label: "Đã cập nhật ngân hàng", value: `${users.filter((user) => user.bank_account).length} người`, note: "Phục vụ đối soát", icon: <BankOutlined /> },
       ]} />
-      <Card className="section-card" title={<div><span>Quản lý thành viên</span><Typography.Text type="secondary" className="card-title-note">Chỉ quản trị viên có thể thay đổi vai trò và thông tin thành viên</Typography.Text></div>} extra={<Button type="primary" icon={<UserAddOutlined />} onClick={openAdd}>Thêm thành viên</Button>}>
-        <Alert type="info" showIcon className="member-help" title="Tài khoản mới và tài khoản Google sẽ tự động xuất hiện tại đây sau lần đăng nhập đầu tiên." />
+      <Card className="section-card" title={<div><span>Quản lý thành viên</span><Typography.Text type="secondary" className="card-title-note">Tạo hồ sơ trước, gán tài khoản sau khi người đó đăng ký</Typography.Text></div>} extra={<Button type="primary" icon={<UserAddOutlined />} onClick={openAdd}>Thêm thành viên</Button>}>
+        <Alert type="info" showIcon className="member-help" title="Thành viên chưa liên kết vẫn có thể được xếp phòng, chọn làm người thanh toán và tham gia chia chi phí." />
         <Table rowKey="user_id" columns={columns} dataSource={users} pagination={false} scroll={{ x: 850 }} locale={{ emptyText: <Empty description="Chưa có thành viên" /> }} />
       </Card>
 
       <Modal title={editingUser ? "Chỉnh sửa thành viên" : "Thêm thành viên"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
         <Form form={form} layout="vertical" onFinish={saveMember}>
-          {!editingUser && <Form.Item name="account_identifier" label="Tên tài khoản hoặc email" extra="Tài khoản cần đăng ký ít nhất một lần trước khi được thêm." rules={[{ required: true, message: "Nhập tên tài khoản hoặc email" }]}><Input autoComplete="off" /></Form.Item>}
           <Form.Item name="full_name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}><Select options={[{ value: "admin", label: "Quản trị viên" }, { value: "member", label: "Thành viên" }]} /></Form.Item>
           <Form.Item name="phone" label="Số điện thoại"><Input /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="bank_account" label="Số tài khoản"><Input /></Form.Item></Col><Col span={12}><Form.Item name="bank_name" label="Ngân hàng"><Input /></Form.Item></Col></Row>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingUser ? "Lưu thay đổi" : "Thêm thành viên"}</Button>
+        </Form>
+      </Modal>
+      <Modal title={`Gán tài khoản cho ${linkingUser?.full_name ?? "thành viên"}`} open={linkModalOpen} onCancel={() => setLinkModalOpen(false)} footer={null} forceRender>
+        <Alert type="info" showIcon title="Người này cần đăng ký tài khoản trước. Việc gán không làm thay đổi dữ liệu phòng hoặc chi phí đã có." />
+        <Form form={linkForm} layout="vertical" onFinish={linkAccount} className="link-account-form">
+          <Form.Item name="account_identifier" label="Tên đăng nhập hoặc email đã đăng ký" rules={[{ required: true, message: "Nhập tài khoản cần gán" }]}><Input autoComplete="off" /></Form.Item>
+          <Form.Item name="role" label="Quyền truy cập" rules={[{ required: true }]}><Select options={[{ value: "member", label: "Thành viên" }, { value: "admin", label: "Quản trị viên" }]} /></Form.Item>
+          <Button type="primary" htmlType="submit" loading={saving} icon={<LinkOutlined />} block>Liên kết tài khoản</Button>
         </Form>
       </Modal>
     </div>

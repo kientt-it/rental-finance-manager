@@ -90,7 +90,9 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     if (setupError) {
       setError(setupError.message.includes("access was removed")
         ? "Quyền truy cập của tài khoản này đã bị quản trị viên thu hồi."
-        : "Chưa thể khởi tạo dữ liệu. Hãy chạy lần lượt các migration từ 0002 đến 0008 trong Supabase.");
+        : setupError.message.includes("waiting for an administrator")
+          ? "Tài khoản đã đăng ký nhưng chưa được gán với thành viên. Hãy liên hệ quản trị viên."
+          : "Chưa thể khởi tạo dữ liệu. Hãy chạy lần lượt các migration đến 0010 trong Supabase.");
       setLoading(false);
       return;
     }
@@ -101,18 +103,20 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     const { data: membership } = await supabase.rpc("get_current_membership");
     const role = (membership as { role?: string } | null)?.role;
     const normalizedRole = role === "admin" ? "admin" : "member";
-    const { data: users, error: usersError } = await supabase.rpc(normalizedRole === "admin" ? "get_manageable_members" : "get_organization_users");
+    const { data: users, error: usersError } = await supabase.rpc("get_household_members");
     if (usersError) {
       setError(`Không tải được danh sách thành viên: ${usersError.message}`);
       setOrganizationUsers([]);
     }
     if (Array.isArray(users)) {
-      const uniqueUsers = Array.from(new Map((users as OrganizationUser[]).map((user) => [user.user_id || user.email, {
+      const uniqueUsers = Array.from(new Map((users as OrganizationUser[]).map((user) => [user.user_id, {
         ...user,
+        auth_user_id: user.auth_user_id ?? null,
         role: user.role ?? "member",
         phone: user.phone ?? "",
         bank_account: user.bank_account ?? "",
         bank_name: user.bank_name ?? "",
+        is_linked: Boolean(user.is_linked),
       }])).values());
       setOrganizationUsers(uniqueUsers);
     }
@@ -274,7 +278,7 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
               onNotice={setNotice}
             />
           )}
-          {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
           {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} />}
           {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
           {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
@@ -372,7 +376,7 @@ function Overview({
         <Col xs={12} sm={12} xl={6} className="summary-col">
           <Card className="summary-card summary-card-purple">
             <Flex justify="space-between" align="flex-start">
-              <Statistic title="Tỷ lệ lấp đầy" value={occupancy} suffix="%" />
+              <Statistic title="Tỷ lệ sử dụng" value={occupancy} suffix="%" />
               <span className="metric-icon purple"><AppstoreOutlined /></span>
             </Flex>
             <Progress percent={occupancy} showInfo={false} size="small" strokeColor="#7c5ce0" />

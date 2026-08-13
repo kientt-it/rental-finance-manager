@@ -153,6 +153,14 @@ body {
   display: none;
 }
 
+.member-help {
+  margin-bottom: 16px;
+}
+
+.link-account-form {
+  margin-top: 18px;
+}
+
 @media (max-width: 767px) {
   .dashboard-content {
     width: 100%;
