@@ -8,5 +8,10 @@ export default async function AuthenticatedDashboard() {
 
   if (!user) redirect("/login");
 
-  return <Dashboard userEmail={user.email ?? ""} userName={user.user_metadata?.full_name ?? ""} />;
+  return <Dashboard
+    userId={user.id}
+    userEmail={user.email ?? ""}
+    userName={user.user_metadata?.full_name ?? ""}
+    avatarUrl={user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? ""}
+  />;
 }

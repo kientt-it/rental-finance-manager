@@ -9,6 +9,7 @@ import {
   Card,
   Col,
   Descriptions,
+  Dropdown,
   Drawer,
   Empty,
   Flex,
@@ -54,6 +55,7 @@ import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type
 type RoomStatus = "vacant" | "occupied" | "leaving" | "maintenance";
 type Room = { id: string; code: string; tenant: string | null; rent: number; due: number; status: RoomStatus; invoice_id: string | null };
 type DashboardData = { organization_id: string; property_id: string; property_name: string; rooms: Room[]; revenue: number; expenses: number };
+type AccountProfileForm = { username: string; full_name: string; phone?: string; bank_account?: string; bank_name?: string; new_password?: string; confirm_password?: string };
 
 const emptyData: DashboardData = { organization_id: "", property_id: "", property_name: "708 La Thành", rooms: [], revenue: 0, expenses: 0 };
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -80,7 +82,7 @@ const tabRoutes: Record<string, string> = {
 
 const routeTabs = Object.fromEntries(Object.entries(tabRoutes).map(([tab, route]) => [route, tab])) as Record<string, string>;
 
-export default function Dashboard({ userEmail, userName }: { userEmail: string; userName: string }) {
+export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { userId: string; userEmail: string; userName: string; avatarUrl: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState(() => routeTabs[pathname] ?? "Tổng quan");
@@ -97,6 +99,11 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [organizationUsers, setOrganizationUsers] = useState<OrganizationUser[]>([]);
   const [currentRole, setCurrentRole] = useState<"admin" | "member">("member");
+  const [accountUsername, setAccountUsername] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileForm] = Form.useForm<AccountProfileForm>();
   const screens = Grid.useBreakpoint();
 
   const loadDashboard = useCallback(async () => {
@@ -137,9 +144,11 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
       }])).values());
       setOrganizationUsers(uniqueUsers);
     }
+    const { data: accountProfile } = await supabase.from("user_profiles").select("username").eq("user_id", userId).maybeSingle();
+    setAccountUsername((accountProfile as { username?: string } | null)?.username ?? "");
     setCurrentRole(normalizedRole);
     setLoading(false);
-  }, []);
+  }, [userId]);
 
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => { if (screens.lg) setMobileMenuOpen(false); }, [screens.lg]);
@@ -151,12 +160,61 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
   const debt = useMemo(() => data.rooms.reduce((sum, room) => sum + Number(room.due), 0), [data.rooms]);
   const debtorRooms = data.rooms.filter((room) => room.due > 0 && room.invoice_id);
   const currentMember = useMemo(() => organizationUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase()) ?? null, [organizationUsers, userEmail]);
-  const displayName = userName || userEmail.split("@")[0] || "Chủ trọ";
+  const displayName = currentMember?.full_name || userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
   const periodLabel = activeTab.startsWith("Chi phí") ? `KỲ ${month.toUpperCase()}` : month.toUpperCase();
   const visibleMenuItems = currentRole === "admin" ? [...menuItems, memberMenuItem] : menuItems;
 
   function parseMoney(value: string) { return Number(value.replace(/[^0-9]/g, "")); }
+
+  function openAccountProfile() {
+    setProfileError("");
+    profileForm.setFieldsValue({
+      username: accountUsername,
+      full_name: currentMember?.full_name || displayName,
+      phone: currentMember?.phone || "",
+      bank_account: currentMember?.bank_account || "",
+      bank_name: currentMember?.bank_name || "",
+      new_password: "",
+      confirm_password: "",
+    });
+    setProfileOpen(true);
+  }
+
+  async function saveAccountProfile(values: AccountProfileForm) {
+    setProfileSaving(true);
+    setProfileError("");
+    const supabase = createClient();
+    const { error: profileUpdateError } = await supabase.rpc("update_my_account_profile", {
+      target_username: values.username.trim(),
+      target_full_name: values.full_name.trim(),
+      target_phone: values.phone?.trim() || "",
+      target_bank_account: values.bank_account?.trim() || "",
+      target_bank_name: values.bank_name?.trim() || "",
+    });
+    if (profileUpdateError) {
+      setProfileSaving(false);
+      setProfileError(profileUpdateError.code === "23505" || profileUpdateError.message.includes("duplicate") ? "Tên đăng nhập này đã được sử dụng." : profileUpdateError.message.includes("Invalid username") ? "Tên đăng nhập chưa đúng định dạng." : "Không thể cập nhật hồ sơ. Hãy chạy migration 0012.");
+      return;
+    }
+
+    const authPayload: { data: { full_name: string; username: string }; password?: string } = {
+      data: { full_name: values.full_name.trim(), username: values.username.trim() },
+    };
+    if (values.new_password) authPayload.password = values.new_password;
+    const { error: authUpdateError } = await supabase.auth.updateUser(authPayload);
+    setProfileSaving(false);
+    if (authUpdateError) {
+      setProfileError(authUpdateError.message.includes("same password") ? "Mật khẩu mới phải khác mật khẩu hiện tại." : authUpdateError.message);
+      return;
+    }
+
+    setAccountUsername(values.username.trim());
+    setProfileOpen(false);
+    setNotice(values.new_password ? "Đã cập nhật hồ sơ và mật khẩu. Lần sau bạn có thể đăng nhập bằng tên tài khoản." : "Đã cập nhật thông tin tài khoản.");
+    await loadDashboard();
+    router.refresh();
+  }
 
   async function savePayment() {
     const value = parseMoney(amount);
@@ -233,15 +291,27 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
     </div>
   );
 
+  const accountMenu = {
+    items: [
+      { key: "summary", label: <div className="account-menu-summary"><Avatar size={38} src={avatarUrl || undefined}>{initials}</Avatar><div><Typography.Text strong>{displayName}</Typography.Text><Typography.Text type="secondary">@{accountUsername || "tài-khoản"}</Typography.Text></div></div> },
+      { type: "divider" as const },
+      { key: "profile", icon: <UserOutlined />, label: "Thông tin tài khoản" },
+      { key: "logout", icon: <LogoutOutlined />, label: "Đăng xuất", danger: true },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === "summary" || key === "profile") openAccountProfile();
+      if (key === "logout") void signOut();
+    },
+  };
+
   return (
     <Layout className="dashboard-layout">
       <Layout.Sider width={256} className="desktop-sider" theme="light">
         {brand}
         {navigation}
         <div className="sider-account">
-          <Button type="text" icon={<LogoutOutlined />} onClick={signOut} block className="logout-button">Đăng xuất</Button>
           <Flex align="center" gap={10}>
-            <Avatar style={{ background: "#dff3ea", color: "#087a58", fontWeight: 800 }}>{initials}</Avatar>
+            <Avatar src={avatarUrl || undefined} style={{ background: "#dff3ea", color: "#087a58", fontWeight: 800 }}>{initials}</Avatar>
             <div className="account-copy">
               <Typography.Text strong>{displayName}</Typography.Text>
               <Tag variant="filled" color={currentRole === "admin" ? "success" : "default"}>{currentRole === "admin" ? "Quản trị viên" : "Thành viên"}</Tag>
@@ -260,7 +330,6 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
         className="mobile-drawer"
       >
         {navigation}
-        <Button type="text" danger icon={<LogoutOutlined />} onClick={signOut} block>Đăng xuất</Button>
       </Drawer>
 
       <Layout>
@@ -278,7 +347,9 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
             </Flex>
             <Space className="header-actions">
               <Button shape="circle" icon={<BellOutlined />} aria-label="Thông báo" />
-              <Avatar className="header-avatar">{initials}</Avatar>
+              <Dropdown menu={accountMenu} trigger={["click"]} placement="bottomRight">
+                <Button type="text" shape="circle" className="account-menu-trigger" aria-label="Mở thông tin tài khoản"><Avatar src={avatarUrl || undefined} className="header-avatar">{initials}</Avatar></Button>
+              </Dropdown>
             </Space>
           </header>
 
@@ -331,6 +402,34 @@ export default function Dashboard({ userEmail, userName }: { userEmail: string; 
             <Input inputMode="numeric" value={roomRent} onChange={(event) => setRoomRent(formatMoneyInput(event.target.value))} placeholder="Ví dụ: 3.500.000" prefix={<DollarOutlined />} />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>Thêm phòng</Button>
+        </Form>
+      </Modal>
+
+      <Modal title="Thông tin tài khoản" open={profileOpen} onCancel={() => setProfileOpen(false)} footer={null} centered width={620} className="account-profile-modal" forceRender>
+        <div className="account-profile-heading">
+          <Avatar size={58} src={avatarUrl || undefined}>{initials}</Avatar>
+          <div><Typography.Title level={4}>{displayName}</Typography.Title><Typography.Text type="secondary">{userEmail}</Typography.Text></div>
+        </div>
+        {profileError && <Alert type="error" showIcon title={profileError} className="account-profile-error" />}
+        <Form form={profileForm} layout="vertical" onFinish={saveAccountProfile} requiredMark={false}>
+          <Row gutter={14}>
+            <Col xs={24} sm={12}><Form.Item name="full_name" label="Tên hiển thị" rules={[{ required: true, message: "Nhập tên hiển thị" }, { max: 120 }]}><Input prefix={<UserOutlined />} /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="username" label="Tên đăng nhập" extra="Dùng tên này để đăng nhập thay cho Google" rules={[{ required: true, message: "Nhập tên đăng nhập" }, { pattern: /^[a-zA-Z0-9._-]{3,32}$/, message: "Dùng 3–32 ký tự: chữ, số, dấu chấm, gạch ngang hoặc gạch dưới" }]}><Input autoComplete="username" /></Form.Item></Col>
+          </Row>
+          <Row gutter={14}>
+            <Col xs={24} sm={12}><Form.Item name="phone" label="Số điện thoại"><Input inputMode="tel" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="bank_name" label="Ngân hàng"><Input placeholder="Ví dụ: Vietcombank" /></Form.Item></Col>
+          </Row>
+          <Form.Item name="bank_account" label="Số tài khoản ngân hàng"><Input inputMode="numeric" /></Form.Item>
+          <div className="account-password-section"><Typography.Text strong>Thiết lập mật khẩu đăng nhập</Typography.Text><Typography.Text type="secondary">Tài khoản Google có thể tạo mật khẩu để đăng nhập bằng tên tài khoản vào lần sau.</Typography.Text></div>
+          <Row gutter={14}>
+            <Col xs={24} sm={12}><Form.Item name="new_password" label="Mật khẩu mới" rules={[{ min: 6, message: "Mật khẩu cần ít nhất 6 ký tự" }]}><Input.Password autoComplete="new-password" placeholder="Để trống nếu không đổi" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="confirm_password" label="Nhập lại mật khẩu" dependencies={["new_password"]} rules={[({ getFieldValue }) => ({ validator(_, value) { if (!getFieldValue("new_password") || value === getFieldValue("new_password")) return Promise.resolve(); return Promise.reject(new Error("Mật khẩu nhập lại chưa khớp")); } })]}><Input.Password autoComplete="new-password" /></Form.Item></Col>
+          </Row>
+          <Flex justify="space-between" gap={12} wrap>
+            <Button danger icon={<LogoutOutlined />} onClick={() => void signOut()}>Đăng xuất</Button>
+            <Space><Button onClick={() => setProfileOpen(false)}>Hủy</Button><Button type="primary" htmlType="submit" loading={profileSaving}>Lưu thay đổi</Button></Space>
+          </Flex>
         </Form>
       </Modal>
     </Layout>

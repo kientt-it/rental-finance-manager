@@ -12,9 +12,11 @@ function authEmailFromUsername(username: string) {
   return `${username.trim().toLowerCase()}@users.708.local`;
 }
 
-function authEmailFromLogin(identifier: string) {
+async function authEmailFromLogin(identifier: string) {
   const normalized = identifier.trim().toLowerCase();
-  return normalized.includes("@") ? normalized : authEmailFromUsername(normalized);
+  if (normalized.includes("@")) return normalized;
+  const { data } = await createClient().rpc("resolve_login_email", { target_identifier: normalized });
+  return typeof data === "string" && data ? data : authEmailFromUsername(normalized);
 }
 
 export default function LoginPage() {
@@ -31,7 +33,8 @@ export default function LoginPage() {
     const supabase = createClient();
 
     if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email: authEmailFromLogin(values.username), password: values.password });
+      const loginEmail = await authEmailFromLogin(values.username);
+      const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: values.password });
       if (error) {
         setMessageType("error");
         setMessage(error.message === "Invalid login credentials" ? "Email hoặc mật khẩu chưa đúng." : error.message);

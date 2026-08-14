@@ -749,6 +749,10 @@ body {
 
 @media (max-width: 480px) {
   .header-actions {
+    display: inline-flex !important;
+  }
+
+  .header-actions .ant-btn[aria-label="Thông báo"] {
     display: none !important;
   }
 
