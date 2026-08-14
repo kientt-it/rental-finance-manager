@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import {
   Alert,
@@ -523,7 +523,7 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
   return { people, expenses, loading, reload: load };
 }
 
-export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr: boolean }) {
+export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr, currentMemberId, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr: boolean; currentMemberId: string | null }) {
   const [filter, setFilter] = useState<"Tất cả" | "Chưa đóng" | "Đã đóng">("Tất cả");
   const [qrOpen, setQrOpen] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
@@ -531,13 +531,16 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   const [qrLoading, setQrLoading] = useState(true);
   const [qrSaving, setQrSaving] = useState(false);
   const [qrError, setQrError] = useState("");
+  const [celebrating, setCelebrating] = useState(false);
   const qrInputRef = useRef<HTMLInputElement>(null);
   const { people, expenses, loading, reload } = usePeopleCosts(organizationId, propertyId, users, financialPeriod, onNotice);
   const visible = people.filter((person) => filter === "Tất cả" || (filter === "Đã đóng" ? person.paid : !person.paid));
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const unpaid = people.filter((person) => !person.paid && person.balance > 0);
   const unpaidTotal = unpaid.reduce((sum, person) => sum + person.balance, 0);
-  const paidPercent = people.length ? Math.round(people.filter((person) => person.paid).length / people.length * 100) : 0;
+  const collectedTotal = people.filter((person) => person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
+  const collectibleTotal = people.filter((person) => person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
+  const paidPercent = collectibleTotal ? Math.round(collectedTotal / collectibleTotal * 100) : 0;
   const receiver = [...people].sort((a, b) => a.balance - b.balance)[0];
 
   const loadPaymentQr = useCallback(async () => {
@@ -633,6 +636,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   }
 
   async function togglePaid(person: PersonCost, paid: boolean) {
+    if (!currentMemberId || person.user_id !== currentMemberId) return onNotice("Bạn chỉ có thể xác nhận thanh toán cho chính mình.");
     if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
     if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể cập nhật thanh toán.");
     const supabase = createClient();
@@ -640,6 +644,11 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
     await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
     onNotice(paid ? `Đã xác nhận ${person.full_name} thanh toán.` : `Đã chuyển ${person.full_name} về chưa thanh toán.`);
+    if (paid) {
+      setCelebrating(false);
+      window.setTimeout(() => setCelebrating(true), 20);
+      window.setTimeout(() => setCelebrating(false), 2400);
+    }
     await reload();
   }
 
@@ -649,11 +658,15 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     { title: "Đã ứng", dataIndex: "advanced", width: 145, render: (amount: number) => vnd.format(amount) },
     { title: "Đối soát", dataIndex: "balance", width: 175, render: (balance: number) => <div><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
     { title: "STK - Ngân hàng", width: 190, render: (_, person) => <div><Typography.Text strong>{person.bank_account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank_name || "Chưa cập nhật"}</Typography.Text></div> },
-    { title: "Đã đóng", dataIndex: "paid", width: 145, render: (paid: boolean, person) => <Checkbox checked={paid} disabled={!financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox> },
+    { title: "Đã đóng", dataIndex: "paid", width: 165, render: (paid: boolean, person) => {
+      const isOwnRow = person.user_id === currentMemberId;
+      return <div className={isOwnRow ? "own-settlement" : "locked-settlement"} title={isOwnRow ? "Xác nhận trạng thái thanh toán của bạn" : "Chỉ thành viên này mới được xác nhận"}><Checkbox checked={paid} disabled={!isOwnRow || !financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox>{isOwnRow && <Typography.Text type="secondary" className="self-row-label">Bạn</Typography.Text>}</div>;
+    } },
   ];
 
   return (
     <div className="page-stack">
+      {celebrating && <div className="confetti-layer" aria-hidden="true">{Array.from({ length: 42 }, (_, index) => <i key={index} style={{ "--confetti-x": `${(index * 47) % 100}vw`, "--confetti-drift": `${((index * 31) % 180) - 90}px`, "--confetti-delay": `${(index % 9) * 0.055}s`, "--confetti-rotate": `${(index * 73) % 360}deg`, "--confetti-color": ["#087a58", "#f5b942", "#e85d75", "#4f8ee8", "#8f63d8"][index % 5] } as CSSProperties} />)}</div>}
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
       {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
       <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" /><span>đã thanh toán</span></div></Col></Row></Card>

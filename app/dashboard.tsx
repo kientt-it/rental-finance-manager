@@ -59,6 +59,7 @@ import { formatMoneyInput } from "@/lib/money";
 import { currentPeriodStart, financialPeriodLabel, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
 import { createPeriodExcelXml, downloadPeriodExcel } from "@/lib/period-excel";
 import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
+import SupportFloatingActions from "./support-floating-actions";
 
 type RoomStatus = "vacant" | "occupied" | "leaving" | "maintenance";
 type Room = { id: string; code: string; tenant: string | null; rent: number; due: number; status: RoomStatus; invoice_id: string | null };
@@ -541,7 +542,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
           )}
           {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
           {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
-          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} canManageQr={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
+          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} canManageQr={currentRole === "admin"} currentMemberId={currentMember?.user_id ?? null} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Quản lý thành viên" && currentRole === "admin" && <MembersView users={organizationUsers} currentUserEmail={userEmail} onNotice={setNotice} onChanged={() => void loadDashboard()} />}
         </Layout.Content>
@@ -643,6 +644,13 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
           </Flex>
         </Form>
       </Modal>
+
+      <SupportFloatingActions
+        organizationId={data.organization_id}
+        propertyId={data.property_id}
+        canManage={currentRole === "admin"}
+        onNotice={setNotice}
+      />
     </Layout>
   );
 }

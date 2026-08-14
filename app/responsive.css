@@ -599,7 +599,15 @@ body {
   }
 
   .payment-progress {
-    font-size: 8px;
+    font-size: 11px;
+  }
+
+  .payment-progress .ant-progress-text {
+    font-size: 16px !important;
+  }
+
+  .payment-progress > span {
+    font-size: 11px;
   }
 
   .overview-room-row {
@@ -777,6 +785,23 @@ body {
 }
 
 @media (max-width: 480px) {
+  .support-float-group {
+    right: 14px !important;
+    bottom: 14px !important;
+  }
+
+  .support-modal .ant-modal-content {
+    padding: 18px 16px;
+  }
+
+  .donate-bank-fields {
+    display: grid !important;
+  }
+
+  .donate-bank-fields > .ant-space-item {
+    width: 100%;
+  }
+
   .header-actions {
     display: inline-flex !important;
   }

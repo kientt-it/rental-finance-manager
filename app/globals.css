@@ -1053,13 +1053,126 @@ select {
   display: grid;
   justify-items: center;
   gap: 7px;
-  color: #dcece5;
-  font-size: 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .payment-progress .ant-progress-text {
   color: #fff !important;
+  font-size: 19px !important;
   font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+.payment-progress > span {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.own-settlement,
+.locked-settlement {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.locked-settlement {
+  opacity: 0.68;
+}
+
+.self-row-label {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.confetti-layer {
+  position: fixed;
+  z-index: 3000;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-layer i {
+  --confetti-x: 50vw;
+  --confetti-drift: 0px;
+  --confetti-delay: 0s;
+  --confetti-rotate: 0deg;
+  --confetti-color: #087a58;
+  position: absolute;
+  top: -18px;
+  left: var(--confetti-x);
+  width: 9px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--confetti-color);
+  transform: rotate(var(--confetti-rotate));
+  animation: settlement-confetti 2.2s cubic-bezier(0.18, 0.78, 0.24, 1) var(--confetti-delay) forwards;
+}
+
+@keyframes settlement-confetti {
+  0% { opacity: 0; transform: translate3d(0, -24px, 0) rotate(var(--confetti-rotate)) scale(0.7); }
+  10% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--confetti-drift), 105vh, 0) rotate(760deg) scale(1); }
+}
+
+.support-float-group {
+  right: 24px !important;
+  bottom: 24px !important;
+  z-index: 1050;
+}
+
+.support-contact-view,
+.donate-view {
+  display: grid;
+  gap: 14px;
+}
+
+.support-contact-view .ant-typography,
+.donate-view .ant-typography {
+  margin-bottom: 0;
+}
+
+.donate-qr-frame {
+  display: grid;
+  width: min(280px, 100%);
+  min-height: 210px;
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid #d9e6e0;
+  border-radius: 16px;
+  background: #fff;
+  place-items: center;
+}
+
+.donate-qr-frame .ant-image,
+.donate-qr-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.donate-bank-fields {
+  display: flex !important;
+  width: 100%;
+}
+
+.donate-bank-fields > .ant-space-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.donate-qr-actions {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.donate-save-button {
+  margin-top: 2px;
 }
 
 .table-note {
