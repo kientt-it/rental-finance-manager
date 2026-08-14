@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import dayjs from "dayjs";
 import {
   Alert,
   Avatar,
   Button,
   Card,
   Col,
+  DatePicker,
   Descriptions,
   Dropdown,
   Drawer,
@@ -20,6 +22,7 @@ import {
   Layout,
   Menu,
   Modal,
+  Popconfirm,
   Progress,
   Row,
   Select,
@@ -33,10 +36,12 @@ import {
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
+  CalendarOutlined,
   CreditCardOutlined,
   DashboardOutlined,
   DollarOutlined,
   DownloadOutlined,
+  DeleteOutlined,
   FileTextOutlined,
   HomeOutlined,
   LogoutOutlined,
@@ -45,11 +50,14 @@ import {
   QrcodeOutlined,
   ThunderboltOutlined,
   TeamOutlined,
+  UnlockOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 import { formatMoneyInput } from "@/lib/money";
+import { currentPeriodStart, financialPeriodLabel, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
+import { createPeriodExcelXml, downloadPeriodExcel } from "@/lib/period-excel";
 import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 
 type RoomStatus = "vacant" | "occupied" | "leaving" | "maintenance";
@@ -59,7 +67,6 @@ type AccountProfileForm = { username: string; full_name: string; phone?: string;
 
 const emptyData: DashboardData = { organization_id: "", property_id: "", property_name: "708 La Thành", rooms: [], revenue: 0, expenses: 0 };
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
-const month = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date());
 
 const menuItems = [
   { key: "Tổng quan", icon: <DashboardOutlined />, label: "Tổng quan" },
@@ -104,6 +111,11 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileForm] = Form.useForm<AccountProfileForm>();
+  const [periods, setPeriods] = useState<FinancialPeriod[]>([]);
+  const [selectedPeriodStart, setSelectedPeriodStart] = useState(currentPeriodStart);
+  const [periodManagerOpen, setPeriodManagerOpen] = useState(false);
+  const [periodMonth, setPeriodMonth] = useState(() => dayjs(currentPeriodStart()));
+  const [periodSaving, setPeriodSaving] = useState(false);
   const screens = Grid.useBreakpoint();
 
   const loadDashboard = useCallback(async () => {
@@ -150,7 +162,37 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     setLoading(false);
   }, [userId]);
 
+  const loadFinancialPeriods = useCallback(async () => {
+    if (!data.property_id) return;
+    const { data: rows, error: periodError } = await createClient().rpc("get_financial_periods", { target_property_id: data.property_id });
+    if (periodError) {
+      setError("Không tải được danh sách kỳ tài chính. Hãy chạy migration 0013.");
+      setPeriods([]);
+      return;
+    }
+    const normalized = ((rows ?? []) as FinancialPeriod[]).map((period) => ({
+      ...period,
+      expense_count: Number(period.expense_count),
+      total_amount: Number(period.total_amount),
+    }));
+    setPeriods(normalized);
+  }, [data.property_id]);
+
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
+  useEffect(() => { void loadFinancialPeriods(); }, [loadFinancialPeriods]);
+  useEffect(() => {
+    const saved = window.localStorage.getItem("708-financial-period");
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as { periodStart?: string; calendarMonth?: string };
+      if (parsed.calendarMonth === currentPeriodStart() && parsed.periodStart) setSelectedPeriodStart(parsed.periodStart);
+    } catch {
+      window.localStorage.removeItem("708-financial-period");
+    }
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("708-financial-period", JSON.stringify({ periodStart: selectedPeriodStart, calendarMonth: currentPeriodStart() }));
+  }, [selectedPeriodStart]);
   useEffect(() => { if (screens.lg) setMobileMenuOpen(false); }, [screens.lg]);
   useEffect(() => { setActiveTab(routeTabs[pathname] ?? "Tổng quan"); }, [pathname]);
   useEffect(() => {
@@ -162,7 +204,18 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const currentMember = useMemo(() => organizationUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase()) ?? null, [organizationUsers, userEmail]);
   const displayName = currentMember?.full_name || userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
-  const periodLabel = activeTab.startsWith("Chi phí") ? `KỲ ${month.toUpperCase()}` : month.toUpperCase();
+  const selectedPeriod = periods.find((period) => period.period_start === selectedPeriodStart) ?? null;
+  const periodLabel = financialPeriodLabel(selectedPeriodStart);
+  const periodOptions = useMemo(() => {
+    const options = periods.map((period) => ({
+      value: period.period_start,
+      label: `${financialPeriodShortLabel(period.period_start)}${period.status === "closed" ? " · Đã chốt" : ""}`,
+    }));
+    if (!options.some((option) => option.value === currentPeriodStart())) {
+      options.unshift({ value: currentPeriodStart(), label: `${financialPeriodShortLabel(currentPeriodStart())} · Chưa tạo` });
+    }
+    return options;
+  }, [periods]);
   const visibleMenuItems = currentRole === "admin" ? [...menuItems, memberMenuItem] : menuItems;
 
   function parseMoney(value: string) { return Number(value.replace(/[^0-9]/g, "")); }
@@ -214,6 +267,113 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     setNotice(values.new_password ? "Đã cập nhật hồ sơ và mật khẩu. Lần sau bạn có thể đăng nhập bằng tên tài khoản." : "Đã cập nhật thông tin tài khoản.");
     await loadDashboard();
     router.refresh();
+  }
+
+  async function createFinancialPeriod() {
+    if (!data.property_id || currentRole !== "admin") return;
+    setPeriodSaving(true);
+    const periodStart = periodMonth.startOf("month").format("YYYY-MM-DD");
+    const { error: createError } = await createClient().rpc("create_financial_period", {
+      target_property_id: data.property_id,
+      target_period_start: periodStart,
+    });
+    setPeriodSaving(false);
+    if (createError) {
+      setNotice("Không thể tạo kỳ tài chính. Hãy kiểm tra quyền quản trị và migration 0013.");
+      return;
+    }
+    setSelectedPeriodStart(periodStart);
+    setNotice(`Đã tạo kỳ ${financialPeriodShortLabel(periodStart)}.`);
+    await loadFinancialPeriods();
+  }
+
+  async function setPeriodStatus(period: FinancialPeriod) {
+    const nextStatus = period.status === "open" ? "closed" : "open";
+    setPeriodSaving(true);
+    const { error: statusError } = await createClient().rpc("set_financial_period_status", {
+      target_period_id: period.id,
+      target_status: nextStatus,
+    });
+    setPeriodSaving(false);
+    if (statusError) {
+      setNotice("Không thể cập nhật trạng thái kỳ.");
+      return;
+    }
+    setNotice(nextStatus === "closed" ? `Đã chốt kỳ ${financialPeriodShortLabel(period.period_start)}.` : `Đã mở lại kỳ ${financialPeriodShortLabel(period.period_start)}.`);
+    await loadFinancialPeriods();
+  }
+
+  async function exportFinancialPeriod(period: FinancialPeriod) {
+    setPeriodSaving(true);
+    const supabase = createClient();
+    const [{ data: expenseRows, error: expenseError }, { data: settlementRows, error: settlementError }] = await Promise.all([
+      supabase.from("expenses")
+        .select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)")
+        .eq("financial_period_id", period.id)
+        .order("expense_date"),
+      supabase.from("household_member_settlements")
+        .select("member_id, is_settled")
+        .eq("financial_period_id", period.id),
+    ]);
+    if (expenseError || settlementError) {
+      setPeriodSaving(false);
+      setNotice("Không tải được dữ liệu để xuất Excel.");
+      return;
+    }
+
+    const nameByMember = new Map(organizationUsers.map((user) => [user.user_id, user.full_name]));
+    const expenses = ((expenseRows ?? []) as Array<{
+      category: string; amount: number; expense_date: string; payer_member_id: string | null;
+      status: string; reference_code: string | null; note: string | null;
+      expense_member_participants: Array<{ member_id: string; allocated_amount: number }>;
+    }>).map((expense) => ({
+      ...expense,
+      amount: Number(expense.amount),
+      expense_member_participants: (expense.expense_member_participants ?? []).map((participant) => ({ ...participant, allocated_amount: Number(participant.allocated_amount) })),
+    }));
+    const paidMap = new Map(((settlementRows ?? []) as Array<{ member_id: string; is_settled: boolean }>).map((settlement) => [settlement.member_id, settlement.is_settled]));
+    const people = organizationUsers.filter((user) => user.role !== "admin").map((user) => {
+      const allocated = expenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((participant) => participant.member_id === user.user_id)?.allocated_amount ?? 0), 0);
+      const advanced = expenses.filter((expense) => expense.payer_member_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
+      return { full_name: user.full_name, allocated, advanced, balance: allocated - advanced, paid: paidMap.get(user.user_id) ?? false, bank_account: user.bank_account, bank_name: user.bank_name };
+    });
+    const xmlContent = createPeriodExcelXml({
+      propertyName: data.property_name || "708 La Thành",
+      periodLabel: financialPeriodLabel(period.period_start),
+      expenses: expenses.map((expense) => ({
+        category: expense.category,
+        amount: expense.amount,
+        expense_date: dayjs(expense.expense_date).format("DD/MM/YYYY"),
+        payer: nameByMember.get(expense.payer_member_id ?? "") ?? "—",
+        participants: expense.expense_member_participants.map((participant) => nameByMember.get(participant.member_id)).filter(Boolean).join(", "),
+        status: expense.status === "completed" ? "Hoàn thành" : "Chờ xử lý",
+        reference_code: expense.reference_code ?? "",
+        note: expense.note ?? "",
+      })),
+      people,
+    });
+    downloadPeriodExcel(xmlContent, `708-la-thanh-${dayjs(period.period_start).format("YYYY-MM")}.xls`);
+    const { error: markError } = await supabase.rpc("mark_financial_period_exported", { target_period_id: period.id });
+    setPeriodSaving(false);
+    if (markError) {
+      setNotice("Đã tải Excel nhưng chưa ghi nhận được thời điểm xuất kỳ.");
+      return;
+    }
+    setNotice(`Đã xuất Excel kỳ ${financialPeriodShortLabel(period.period_start)}.`);
+    await loadFinancialPeriods();
+  }
+
+  async function deleteFinancialPeriod(period: FinancialPeriod) {
+    setPeriodSaving(true);
+    const { error: deleteError } = await createClient().rpc("delete_financial_period", { target_period_id: period.id });
+    setPeriodSaving(false);
+    if (deleteError) {
+      setNotice(deleteError.message.includes("Export") ? "Cần xuất Excel trước khi xóa kỳ." : "Không thể xóa kỳ tài chính.");
+      return;
+    }
+    if (selectedPeriodStart === period.period_start) setSelectedPeriodStart(currentPeriodStart());
+    setNotice(`Đã xóa kỳ ${financialPeriodShortLabel(period.period_start)} và dữ liệu chi phí liên quan.`);
+    await loadFinancialPeriods();
   }
 
   async function savePayment() {
@@ -338,7 +498,18 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
             <Flex align="center" gap={14}>
               <Button className="mobile-menu-button" icon={<MenuOutlined />} onClick={() => setMobileMenuOpen(true)} />
               <div>
-                <Typography.Text className="period-label">{periodLabel}</Typography.Text>
+                <Flex align="center" gap={8} wrap className="period-header-row">
+                  <Typography.Text className="period-label">{periodLabel}</Typography.Text>
+                  <Select
+                    size="small"
+                    value={selectedPeriodStart}
+                    onChange={setSelectedPeriodStart}
+                    options={periodOptions}
+                    className="period-switcher"
+                    aria-label="Chọn kỳ tài chính"
+                  />
+                  {currentRole === "admin" && <Button size="small" type="text" icon={<CalendarOutlined />} onClick={() => setPeriodManagerOpen(true)}>Quản lý kỳ</Button>}
+                </Flex>
                 <Typography.Title level={2}>{activeTab}</Typography.Title>
                 <Typography.Text className="page-subtitle">
                   {activeTab === "Tổng quan" ? "Theo dõi vận hành và tài chính tại một nơi" : data.property_name}
@@ -364,12 +535,14 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               users={organizationUsers}
               displayName={displayName}
               currentRole={currentRole}
+              financialPeriod={selectedPeriod}
+              periodStart={selectedPeriodStart}
             />
           )}
           {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
-          {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} />}
-          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} canManageQr={currentRole === "admin"} />}
-          {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} />}
+          {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
+          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} canManageQr={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
+          {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Quản lý thành viên" && currentRole === "admin" && <MembersView users={organizationUsers} currentUserEmail={userEmail} onNotice={setNotice} onChanged={() => void loadDashboard()} />}
         </Layout.Content>
       </Layout>
@@ -403,6 +576,44 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>Thêm phòng</Button>
         </Form>
+      </Modal>
+
+      <Modal title="Quản lý kỳ tài chính" open={periodManagerOpen} onCancel={() => setPeriodManagerOpen(false)} footer={null} centered width={760} className="period-manager-modal">
+        <Alert type="info" showIcon title="Mỗi tháng là một kỳ riêng. Hãy xuất Excel trước khi xóa để lưu bản đối soát." />
+        <Flex gap={10} wrap className="period-create-row">
+          <DatePicker picker="month" allowClear={false} value={periodMonth} onChange={(value) => value && setPeriodMonth(value)} format="MM/YYYY" />
+          <Button type="primary" icon={<PlusOutlined />} loading={periodSaving} onClick={() => void createFinancialPeriod()}>Tạo kỳ</Button>
+        </Flex>
+        <div className="period-manager-list">
+          {periods.length ? periods.map((period) => (
+            <div className={`period-manager-item ${period.period_start === selectedPeriodStart ? "selected" : ""}`} key={period.id}>
+              <div className="period-manager-main">
+                <Flex align="center" gap={8} wrap>
+                  <Typography.Text strong>{financialPeriodLabel(period.period_start)}</Typography.Text>
+                  <Tag color={period.status === "open" ? "success" : "default"}>{period.status === "open" ? "Đang mở" : "Đã chốt"}</Tag>
+                  {period.exported_at && <Tag color="blue">Đã xuất Excel</Tag>}
+                </Flex>
+                <Typography.Text type="secondary">{period.expense_count} khoản · {money.format(period.total_amount)}</Typography.Text>
+              </div>
+              <Space wrap>
+                <Button size="small" onClick={() => { setSelectedPeriodStart(period.period_start); setPeriodManagerOpen(false); }}>Chọn kỳ</Button>
+                <Button size="small" icon={<UnlockOutlined />} onClick={() => void setPeriodStatus(period)} loading={periodSaving}>{period.status === "open" ? "Chốt kỳ" : "Mở lại"}</Button>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => void exportFinancialPeriod(period)} loading={periodSaving}>Xuất Excel</Button>
+                <Popconfirm
+                  title="Xóa toàn bộ dữ liệu kỳ này?"
+                  description={period.exported_at ? "Khoản chi và trạng thái đối soát của kỳ sẽ bị xóa vĩnh viễn." : "Bạn cần xuất Excel trước khi xóa."}
+                  okText="Xóa kỳ"
+                  cancelText="Hủy"
+                  okButtonProps={{ danger: true }}
+                  disabled={!period.exported_at}
+                  onConfirm={() => void deleteFinancialPeriod(period)}
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />} disabled={!period.exported_at} loading={periodSaving}>Xóa</Button>
+                </Popconfirm>
+              </Space>
+            </div>
+          )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ tài chính" />}
+        </div>
       </Modal>
 
       <Modal title="Thông tin tài khoản" open={profileOpen} onCancel={() => setProfileOpen(false)} footer={null} centered width={620} className="account-profile-modal" forceRender>
@@ -448,13 +659,15 @@ type PersonalExpense = {
   expense_member_participants: PersonalExpenseParticipant[];
 };
 
-function Overview({ organizationId, propertyId, currentMember, users, displayName, currentRole }: {
+function Overview({ organizationId, propertyId, currentMember, users, displayName, currentRole, financialPeriod, periodStart }: {
   organizationId: string;
   propertyId: string;
   currentMember: OrganizationUser | null;
   users: OrganizationUser[];
   displayName: string;
   currentRole: "admin" | "member";
+  financialPeriod: FinancialPeriod | null;
+  periodStart: string;
 }) {
   const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
   const [settled, setSettled] = useState(false);
@@ -474,26 +687,27 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
         setLoading(false);
         return;
       }
+      if (!financialPeriod) {
+        setExpenses([]);
+        setSettled(false);
+        setLoading(false);
+        return;
+      }
 
       setLoading(true);
       setLoadError("");
-      const now = new Date();
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const nextMonthStart = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
       const supabase = createClient();
       const [{ data: expenseRows, error: expenseError }, { data: settlementRow, error: settlementError }] = await Promise.all([
         supabase.from("expenses")
           .select("id, category, amount, expense_date, payer_member_id, status, reference_code, expense_member_participants(member_id, allocated_amount)")
           .eq("organization_id", organizationId)
-          .gte("expense_date", monthStart)
-          .lt("expense_date", nextMonthStart)
+          .eq("financial_period_id", financialPeriod.id)
           .order("expense_date", { ascending: false }),
         supabase.from("household_member_settlements")
           .select("is_settled")
           .eq("property_id", propertyId)
           .eq("member_id", currentMember.user_id)
-          .eq("period", monthStart)
+          .eq("financial_period_id", financialPeriod.id)
           .maybeSingle(),
       ]);
 
@@ -513,7 +727,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
     }
 
     void loadPersonalOverview();
-  }, [currentMember, currentRole, organizationId, propertyId]);
+  }, [currentMember, currentRole, financialPeriod, organizationId, propertyId]);
 
   useEffect(() => {
     async function loadPaymentQr() {
@@ -570,7 +784,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
     <div className="page-stack personal-overview-page">
       <section className="personal-overview-hero">
         <div>
-          <span className="hero-eyebrow">TỔNG QUAN CÁ NHÂN · {month.toUpperCase()}</span>
+          <span className="hero-eyebrow">TỔNG QUAN CÁ NHÂN · {financialPeriodLabel(periodStart, false)}</span>
           <Typography.Title level={3}>Xin chào, {displayName}</Typography.Title>
           <Typography.Paragraph>Theo dõi những khoản bạn đã chi, được chia và cần đối soát trong tháng này.</Typography.Paragraph>
         </div>
@@ -582,6 +796,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
       </section>
 
       {currentRole === "admin" && <Alert type="info" showIcon title="Tài khoản quản trị viên không tham gia chia chi phí và không có số liệu cá nhân." />}
+      {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được quản trị viên tạo.`} />}
       {!currentMember && currentRole !== "admin" && <Alert type="warning" showIcon title="Tài khoản này chưa được gán với hồ sơ thành viên." />}
       {loadError && <Alert type="error" showIcon title={loadError} />}
 
@@ -612,7 +827,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={16}>
-          <Card className="section-card personal-expense-card" title={<div><span>Khoản chi bạn tham gia</span><Typography.Text type="secondary" className="card-title-note">Các khoản được chia cho tài khoản của bạn trong {month}</Typography.Text></div>} extra={<Tag color="success">{participatingExpenses.length} khoản</Tag>}>
+          <Card className="section-card personal-expense-card" title={<div><span>Khoản chi bạn tham gia</span><Typography.Text type="secondary" className="card-title-note">Các khoản được chia trong kỳ {financialPeriodShortLabel(periodStart)}</Typography.Text></div>} extra={<Tag color="success">{participatingExpenses.length} khoản</Tag>}>
             {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : participatingExpenses.length ? (
               <div className="personal-expense-list">
                 <div className="personal-expense-header"><span>Khoản chi</span><span>Người thanh toán</span><span>Tổng chi</span><span>Phần của bạn</span><span>Trạng thái</span></div>

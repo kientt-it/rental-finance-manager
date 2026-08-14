@@ -202,6 +202,35 @@ body {
     white-space: nowrap;
   }
 
+  .period-header-row {
+    gap: 4px !important;
+  }
+
+  .period-switcher {
+    min-width: 112px;
+    max-width: 128px;
+  }
+
+  .period-header-row .ant-btn {
+    width: 30px;
+    padding-inline: 6px;
+    overflow: hidden;
+    color: transparent;
+  }
+
+  .period-header-row .ant-btn .anticon {
+    color: #087a58;
+  }
+
+  .period-manager-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .period-manager-item > .ant-space {
+    width: 100%;
+  }
+
   .page-stack {
     gap: 12px;
   }

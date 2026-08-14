@@ -50,10 +50,10 @@ import {
 } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 import { formatMoneyInput } from "@/lib/money";
+import { financialPeriodEnd, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
 
 const vnd = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const compactVnd = new Intl.NumberFormat("vi-VN", { notation: "compact", style: "currency", currency: "VND", maximumFractionDigits: 1 });
-const currentPeriod = dayjs().startOf("month");
 
 export type OrganizationUser = {
   user_id: string;
@@ -69,6 +69,7 @@ export type OrganizationUser = {
 
 type NoticeHandler = (message: string) => void;
 type SharedProps = { organizationId: string; propertyId: string; onNotice: NoticeHandler };
+type PeriodProps = { financialPeriod: FinancialPeriod | null; periodStart: string };
 
 type RentalRoom = {
   id: string;
@@ -329,11 +330,10 @@ function RoomCard({ room, compact = false, onEdit, onDelete }: { room: RentalRoo
   );
 }
 
-export function ExpensesView({ organizationId, propertyId, onNotice, users, currentUserEmail }: SharedProps & { users: OrganizationUser[]; currentUserEmail: string }) {
+export function ExpensesView({ organizationId, propertyId, onNotice, users, currentUserEmail, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; currentUserEmail: string }) {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [monthFilter, setMonthFilter] = useState<Dayjs | null>(currentPeriod);
   const [statusFilter, setStatusFilter] = useState<"all" | ExpenseRecord["status"]>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
@@ -345,10 +345,16 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
 
   const loadExpenses = useCallback(async () => {
     if (!organizationId) return;
+    if (!financialPeriod) {
+      setExpenses([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await createClient().from("expenses")
       .select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)")
       .eq("organization_id", organizationId)
+      .eq("financial_period_id", financialPeriod.id)
       .order("expense_date", { ascending: false });
     if (error) onNotice("Không tải được chi phí. Hãy chạy migration 0006.");
     const normalized = ((data ?? []) as unknown as ExpenseRecord[]).map((expense) => ({
@@ -358,23 +364,25 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     }));
     setExpenses(normalized);
     setLoading(false);
-  }, [onNotice, organizationId]);
+  }, [financialPeriod, onNotice, organizationId]);
 
   useEffect(() => { void loadExpenses(); }, [loadExpenses]);
 
   const filtered = expenses.filter((expense) => {
     const matchesQuery = expense.category.toLocaleLowerCase("vi").includes(query.toLocaleLowerCase("vi"));
-    const matchesMonth = !monthFilter || dayjs(expense.expense_date).format("YYYY-MM") === monthFilter.format("YYYY-MM");
-    return matchesQuery && matchesMonth && (statusFilter === "all" || expense.status === statusFilter);
+    return matchesQuery && (statusFilter === "all" || expense.status === statusFilter);
   });
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const completedTotal = expenses.filter((expense) => expense.status === "completed").reduce((sum, expense) => sum + expense.amount, 0);
   const filteredTotal = filtered.reduce((sum, expense) => sum + expense.amount, 0);
 
   function openCreate() {
+    if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể thêm chi phí.");
     const currentUser = expenseUsers.find((user) => user.email === currentUserEmail) ?? expenseUsers[0];
+    const defaultExpenseDate = dayjs(periodStart).isSame(dayjs(), "month") ? dayjs() : dayjs(periodStart);
     setEditingExpense(null);
-    form.setFieldsValue({ category: "", amount: "", expense_date: dayjs(), payer_member_id: currentUser?.user_id, participant_ids: expenseUsers.map((user) => user.user_id), status: "completed", reference_code: "", note: "" });
+    form.setFieldsValue({ category: "", amount: "", expense_date: defaultExpenseDate, payer_member_id: currentUser?.user_id, participant_ids: expenseUsers.map((user) => user.user_id), status: "completed", reference_code: "", note: "" });
     setModalOpen(true);
   }
 
@@ -396,10 +404,13 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   async function saveExpense(values: ExpenseFormValues) {
     const amount = parseMoney(values.amount);
     if (!amount || !values.participant_ids.length) return onNotice("Nhập số tiền và chọn ít nhất một thành viên.");
+    if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể chỉnh sửa chi phí.");
     setSaving(true);
     const { error } = await createClient().rpc("save_household_expense", {
       target_expense_id: editingExpense?.id ?? null,
       target_property_id: propertyId,
+      target_financial_period_id: financialPeriod.id,
       target_category: values.category.trim(),
       target_amount: amount,
       target_expense_date: values.expense_date.format("YYYY-MM-DD"),
@@ -417,8 +428,10 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   }
 
   async function deleteExpense(expense: ExpenseRecord) {
-    const { error } = await createClient().from("expenses").delete().eq("id", expense.id);
+    const supabase = createClient();
+    const { error } = await supabase.from("expenses").delete().eq("id", expense.id);
     if (error) return onNotice("Không thể xóa khoản chi này.");
+    if (financialPeriod) await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
     onNotice(`Đã xóa ${expense.category}.`);
     await loadExpenses();
   }
@@ -430,21 +443,22 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     { title: "Người tham gia", width: 220, render: (_, expense) => expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter(Boolean).join(", ") || "—" },
     { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
     { title: "Trạng thái", dataIndex: "status", width: 125, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
-    { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
+    { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} disabled={financialPeriod?.status === "closed"} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={financialPeriod?.status === "closed"} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} disabled={financialPeriod?.status === "closed"} /></Popconfirm></Space> },
   ];
 
   return (
     <div className="page-stack">
+      {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
+      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Dữ liệu đang ở chế độ chỉ đọc.`} />}
       <ViewSummary items={[
         { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined /> },
         { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled /> },
         { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined /> },
         { label: "Thành viên", value: `${expenseUsers.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
       ]} />
-      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Quản trị viên không tham gia chia chi phí</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length}>Thêm chi phí</Button>}>
+      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Kỳ {financialPeriodShortLabel(periodStart)} · Quản trị viên không tham gia chia chi phí</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length || !financialPeriod || financialPeriod.status === "closed"}>Thêm chi phí</Button>}>
         <Flex className="table-toolbar" gap={10} wrap>
           <Input allowClear prefix={<SearchOutlined />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm khoản chi..." className="table-search" />
-          <DatePicker picker="month" allowClear value={monthFilter} onChange={setMonthFilter} format="MM/YYYY" placeholder="Tất cả thời gian" className="month-filter" />
           <Select className="status-filter" value={statusFilter} onChange={(value) => setStatusFilter(value as typeof statusFilter)} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} />
         </Flex>
         <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={4} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={4} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} colSpan={2} /></Table.Summary.Row> : null} />
@@ -457,7 +471,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
             <Col xs={24} sm={10}><Form.Item name="amount" label="Số tiền (VNĐ)" normalize={(value) => formatMoneyInput(String(value ?? ""))} rules={[{ required: true }]}><Input inputMode="numeric" placeholder="1.500.000" /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col xs={24} sm={12}><Form.Item name="expense_date" label="Ngày chi" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="expense_date" label="Ngày chi" rules={[{ required: true }]}><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} disabledDate={(date) => date.isBefore(dayjs(periodStart), "day") || !date.isBefore(dayjs(financialPeriodEnd(periodStart)), "day")} /></Form.Item></Col>
             <Col xs={24} sm={12}><Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}><Select options={[{ value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} /></Form.Item></Col>
           </Row>
           <Form.Item name="payer_member_id" label="Người thanh toán" rules={[{ required: true }]}><Select options={expenseUsers.map((user) => ({ value: user.user_id, label: `${user.full_name}${user.is_linked ? "" : " — chưa liên kết tài khoản"}` }))} /></Form.Item>
@@ -474,20 +488,26 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   );
 }
 
-function usePeopleCosts(organizationId: string, propertyId: string, users: OrganizationUser[], onError?: NoticeHandler) {
+function usePeopleCosts(organizationId: string, propertyId: string, users: OrganizationUser[], financialPeriod: FinancialPeriod | null, onError?: NoticeHandler) {
   const [people, setPeople] = useState<PersonCost[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!organizationId || !propertyId) return;
+    if (!financialPeriod) {
+      setExpenses([]);
+      setPeople(chargeableMembers(users).map((user) => ({ ...user, allocated: 0, advanced: 0, balance: 0, paid: false })));
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const supabase = createClient();
     const [{ data: expenseRows, error: expenseError }, { data: settlementRows, error: settlementError }] = await Promise.all([
-      supabase.from("expenses").select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)").eq("organization_id", organizationId).gte("expense_date", currentPeriod.format("YYYY-MM-DD")).lt("expense_date", currentPeriod.add(1, "month").format("YYYY-MM-DD")),
-      supabase.from("household_member_settlements").select("member_id, is_settled").eq("property_id", propertyId).eq("period", currentPeriod.format("YYYY-MM-DD")),
+      supabase.from("expenses").select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)").eq("organization_id", organizationId).eq("financial_period_id", financialPeriod.id),
+      supabase.from("household_member_settlements").select("member_id, is_settled").eq("property_id", propertyId).eq("financial_period_id", financialPeriod.id),
     ]);
-    if (expenseError || settlementError) onError?.("Không tải được dữ liệu đối soát. Hãy chạy migration 0006.");
+    if (expenseError || settlementError) onError?.("Không tải được dữ liệu đối soát. Hãy chạy migration 0013.");
     const normalizedExpenses = ((expenseRows ?? []) as unknown as ExpenseRecord[]).map((expense) => ({ ...expense, amount: Number(expense.amount), expense_member_participants: (expense.expense_member_participants ?? []).map((item) => ({ ...item, allocated_amount: Number(item.allocated_amount) })) }));
     const paidMap = new Map(((settlementRows ?? []) as Settlement[]).map((item) => [item.member_id, item.is_settled]));
     setExpenses(normalizedExpenses);
@@ -497,13 +517,13 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
       return { ...user, allocated, advanced, balance: allocated - advanced, paid: paidMap.get(user.user_id) ?? false };
     }));
     setLoading(false);
-  }, [onError, organizationId, propertyId, users]);
+  }, [financialPeriod, onError, organizationId, propertyId, users]);
 
   useEffect(() => { void load(); }, [load]);
   return { people, expenses, loading, reload: load };
 }
 
-export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr }: SharedProps & { users: OrganizationUser[]; canManageQr: boolean }) {
+export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr: boolean }) {
   const [filter, setFilter] = useState<"Tất cả" | "Chưa đóng" | "Đã đóng">("Tất cả");
   const [qrOpen, setQrOpen] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
@@ -512,7 +532,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   const [qrSaving, setQrSaving] = useState(false);
   const [qrError, setQrError] = useState("");
   const qrInputRef = useRef<HTMLInputElement>(null);
-  const { people, expenses, loading, reload } = usePeopleCosts(organizationId, propertyId, users, onNotice);
+  const { people, expenses, loading, reload } = usePeopleCosts(organizationId, propertyId, users, financialPeriod, onNotice);
   const visible = people.filter((person) => filter === "Tất cả" || (filter === "Đã đóng" ? person.paid : !person.paid));
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const unpaid = people.filter((person) => !person.paid && person.balance > 0);
@@ -613,8 +633,12 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   }
 
   async function togglePaid(person: PersonCost, paid: boolean) {
-    const { error } = await createClient().from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: currentPeriod.format("YYYY-MM-DD"), is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
+    if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể cập nhật thanh toán.");
+    const supabase = createClient();
+    const { error } = await supabase.from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: periodStart, financial_period_id: financialPeriod.id, is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
+    await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
     onNotice(paid ? `Đã xác nhận ${person.full_name} thanh toán.` : `Đã chuyển ${person.full_name} về chưa thanh toán.`);
     await reload();
   }
@@ -625,14 +649,16 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     { title: "Đã ứng", dataIndex: "advanced", width: 145, render: (amount: number) => vnd.format(amount) },
     { title: "Đối soát", dataIndex: "balance", width: 175, render: (balance: number) => <div><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
     { title: "STK - Ngân hàng", width: 190, render: (_, person) => <div><Typography.Text strong>{person.bank_account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank_name || "Chưa cập nhật"}</Typography.Text></div> },
-    { title: "Đã đóng", dataIndex: "paid", width: 145, render: (paid: boolean, person) => <Checkbox checked={paid} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox> },
+    { title: "Đã đóng", dataIndex: "paid", width: 145, render: (paid: boolean, person) => <Checkbox checked={paid} disabled={!financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox> },
   ];
 
   return (
     <div className="page-stack">
-      <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {currentPeriod.format("MM/YYYY")}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu được tính tự động từ các khoản chi trong tháng.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" /><span>đã thanh toán</span></div></Col></Row></Card>
+      {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
+      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
+      <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" /><span>đã thanh toán</span></div></Col></Row></Card>
       <ViewSummary items={[
-        { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong tháng`, icon: <WalletOutlined /> },
+        { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined /> },
         { label: "Thành viên", value: `${people.length} người`, note: "Tham gia tổ chức", icon: <TeamOutlined /> },
         { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined /> },
         { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined /> },
@@ -687,8 +713,8 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   );
 }
 
-export function ReportView({ organizationId, propertyId, users }: { organizationId: string; propertyId: string; users: OrganizationUser[] }) {
-  const { people, expenses, loading } = usePeopleCosts(organizationId, propertyId, users);
+export function ReportView({ organizationId, propertyId, users, financialPeriod, periodStart }: { organizationId: string; propertyId: string; users: OrganizationUser[] } & PeriodProps) {
+  const { people, expenses, loading } = usePeopleCosts(organizationId, propertyId, users, financialPeriod);
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const collected = people.filter((person) => person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
   const outstanding = people.filter((person) => !person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
@@ -699,15 +725,16 @@ export function ReportView({ organizationId, propertyId, users }: { organization
   if (loading) return <Skeleton active paragraph={{ rows: 10 }} />;
   return (
     <div className="page-stack">
+      {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
       <ViewSummary items={[
-        { label: "Tổng chi kỳ này", value: vnd.format(total), note: currentPeriod.format("MM/YYYY"), icon: <WalletOutlined /> },
+        { label: "Tổng chi kỳ này", value: vnd.format(total), note: financialPeriodShortLabel(periodStart), icon: <WalletOutlined /> },
         { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% cần thu`, icon: <CheckCircleFilled /> },
         { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined /> },
         { label: "Số thành viên", value: `${people.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
       ]} />
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div><Flex justify="space-between"><Typography.Text>Tiến độ đã thu</Typography.Text><Typography.Text strong>{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
-        <Col xs={24} lg={10}><Card title={`Tóm tắt kỳ ${currentPeriod.format("MM/YYYY")}`} className="section-card"><Descriptions column={1} bordered><Descriptions.Item label="Khoản chi lớn nhất">{largest?.category ?? "—"}</Descriptions.Item><Descriptions.Item label="Người ứng nhiều nhất">{topPayer?.advanced ? topPayer.full_name : "—"}</Descriptions.Item><Descriptions.Item label="Số người đã đóng">{people.filter((person) => person.paid).length}/{people.length}</Descriptions.Item><Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã hoàn tất"}</Tag></Descriptions.Item></Descriptions></Card></Col>
+        <Col xs={24} lg={10}><Card title={`Tóm tắt kỳ ${financialPeriodShortLabel(periodStart)}`} className="section-card"><Descriptions column={1} bordered><Descriptions.Item label="Khoản chi lớn nhất">{largest?.category ?? "—"}</Descriptions.Item><Descriptions.Item label="Người ứng nhiều nhất">{topPayer?.advanced ? topPayer.full_name : "—"}</Descriptions.Item><Descriptions.Item label="Số người đã đóng">{people.filter((person) => person.paid).length}/{people.length}</Descriptions.Item><Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã hoàn tất"}</Tag></Descriptions.Item></Descriptions></Card></Col>
       </Row>
     </div>
   );
