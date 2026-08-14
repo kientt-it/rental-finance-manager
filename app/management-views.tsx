@@ -17,6 +17,7 @@ import {
   Image,
   Input,
   Modal,
+  Popover,
   Popconfirm,
   Progress,
   Row,
@@ -27,6 +28,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
   type TableColumnsType,
 } from "antd";
@@ -53,7 +55,7 @@ import { formatMoneyInput } from "@/lib/money";
 import { financialPeriodEnd, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
 
 const vnd = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
-const compactVnd = new Intl.NumberFormat("vi-VN", { notation: "compact", style: "currency", currency: "VND", maximumFractionDigits: 1 });
+type SummaryTone = "neutral" | "green" | "blue" | "orange" | "danger";
 
 export type OrganizationUser = {
   user_id: string;
@@ -248,10 +250,10 @@ export function RoomsView({ organizationId, propertyId, onNotice, users }: Share
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined /> },
-        { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% đang sử dụng` : "Chưa có phòng", icon: <HomeOutlined /> },
-        { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined /> },
-        { label: "Giá bình quân", value: rooms.length ? compactVnd.format(totalRent / rooms.length) : "0 ₫", note: "Mỗi phòng / tháng", icon: <BankOutlined /> },
+        { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined />, tone: "neutral" },
+        { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% đang sử dụng` : "Chưa có phòng", icon: <HomeOutlined />, tone: "blue" },
+        { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined />, tone: "neutral" },
+        { label: "Giá bình quân", value: rooms.length ? vnd.format(totalRent / rooms.length) : vnd.format(0), note: "Mỗi phòng / tháng", icon: <BankOutlined />, tone: "neutral" },
       ]} />
 
       <Flex className="view-actions" justify="space-between" align="center" gap={12} wrap>
@@ -309,9 +311,11 @@ function RoomCard({ room, compact = false, onEdit, onDelete }: { room: RentalRoo
         <Tag color="gold">Tầng {room.floor}</Tag>
         <Space size={2}>
           <Tag color={statusColor}>{statusLabel}</Tag>
-          <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit}>Sửa</Button>
+          <Tooltip title="Chỉnh sửa phòng">
+            <Button className="room-action-button" type="text" icon={<EditOutlined />} onClick={onEdit} aria-label={`Chỉnh sửa ${room.code}`}>Sửa</Button>
+          </Tooltip>
           <Popconfirm title="Xóa phòng này?" description="Dữ liệu không thể khôi phục." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={onDelete}>
-            <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label={`Xóa ${room.code}`} />
+            <Tooltip title="Xóa phòng"><Button className="room-action-button room-delete-button" type="text" icon={<DeleteOutlined />} aria-label={`Xóa ${room.code}`} /></Tooltip>
           </Popconfirm>
         </Space>
       </Flex>
@@ -440,7 +444,14 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     { title: "Ngày", dataIndex: "expense_date", width: 115, render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
     { title: "Nội dung", dataIndex: "category", width: 190, render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference_code && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference_code}</Typography.Text>}</div> },
     { title: "Người thanh toán", dataIndex: "payer_member_id", width: 170, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
-    { title: "Người tham gia", width: 220, render: (_, expense) => expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter(Boolean).join(", ") || "—" },
+    { title: "Người tham gia", width: 220, render: (_, expense) => {
+      const names = expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter((name): name is string => Boolean(name));
+      if (!names.length) return "—";
+      return <Flex gap={4} wrap className="participant-preview">
+        {names.slice(0, 3).map((name) => <Tag key={name}>{name}</Tag>)}
+        {names.length > 3 && <Popover title={`${names.length} người tham gia`} content={<div className="participant-popover">{names.map((name) => <span key={name}>{name}</span>)}</div>}><Tag className="participant-more">+{names.length - 3}</Tag></Popover>}
+      </Flex>;
+    } },
     { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
     { title: "Trạng thái", dataIndex: "status", width: 125, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
     { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} disabled={financialPeriod?.status === "closed"} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={financialPeriod?.status === "closed"} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} disabled={financialPeriod?.status === "closed"} /></Popconfirm></Space> },
@@ -451,10 +462,10 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
       {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Dữ liệu đang ở chế độ chỉ đọc.`} />}
       <ViewSummary items={[
-        { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined /> },
-        { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled /> },
-        { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined /> },
-        { label: "Thành viên", value: `${expenseUsers.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
+        { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined />, tone: "neutral" },
+        { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled />, tone: "green" },
+        { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined />, tone: "orange" },
+        { label: "Thành viên", value: `${expenseUsers.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined />, tone: "neutral" },
       ]} />
       <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Kỳ {financialPeriodShortLabel(periodStart)} · Quản trị viên không tham gia chia chi phí</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length || !financialPeriod || financialPeriod.status === "closed"}>Thêm chi phí</Button>}>
         <Flex className="table-toolbar" gap={10} wrap>
@@ -643,7 +654,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     const { error } = await supabase.from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: periodStart, financial_period_id: financialPeriod.id, is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
     await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
-    onNotice(paid ? `Đã xác nhận ${person.full_name} thanh toán.` : `Đã chuyển ${person.full_name} về chưa thanh toán.`);
+    onNotice(paid ? `Đã xác nhận bạn thanh toán ${vnd.format(Math.max(person.balance, 0))}.` : "Đã chuyển trạng thái của bạn về chưa thanh toán.");
     if (paid) {
       setCelebrating(false);
       window.setTimeout(() => setCelebrating(true), 20);
@@ -653,10 +664,10 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   }
 
   const columns: TableColumnsType<PersonCost> = [
-    { title: "Thành viên", dataIndex: "full_name", width: 180, render: (name: string) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
+    { title: "Thành viên", dataIndex: "full_name", width: 180, fixed: "left", render: (name: string) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "Phần chi phí", dataIndex: "allocated", width: 145, render: (amount: number) => vnd.format(amount) },
     { title: "Đã ứng", dataIndex: "advanced", width: 145, render: (amount: number) => vnd.format(amount) },
-    { title: "Đối soát", dataIndex: "balance", width: 175, render: (balance: number) => <div><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
+    { title: "Đối soát", dataIndex: "balance", width: 185, render: (balance: number) => <div className="balance-cell"><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
     { title: "STK - Ngân hàng", width: 190, render: (_, person) => <div><Typography.Text strong>{person.bank_account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank_name || "Chưa cập nhật"}</Typography.Text></div> },
     { title: "Đã đóng", dataIndex: "paid", width: 165, render: (paid: boolean, person) => {
       const isOwnRow = person.user_id === currentMemberId;
@@ -671,12 +682,12 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
       {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
       <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" /><span>đã thanh toán</span></div></Col></Row></Card>
       <ViewSummary items={[
-        { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined /> },
-        { label: "Thành viên", value: `${people.length} người`, note: "Tham gia tổ chức", icon: <TeamOutlined /> },
-        { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined /> },
-        { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined /> },
+        { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined />, tone: "neutral" },
+        { label: "Thành viên", value: `${people.length} người`, note: "Tham gia đối soát", icon: <TeamOutlined />, tone: "neutral" },
+        { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined />, tone: "orange" },
+        { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined />, tone: "green" },
       ]} />
-      <Card className="section-card" title={<div><span>Chi phí từng người</span><Typography.Text type="secondary" className="card-title-note">Tick để cập nhật trạng thái đã thanh toán</Typography.Text></div>} extra={<Space wrap className="people-cost-actions"><Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>Mã QR</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}>
+      <Card className="section-card" title={<div><span>Đối soát thành viên</span><Typography.Text type="secondary" className="card-title-note">Mỗi thành viên chỉ xác nhận được trạng thái thanh toán của chính mình</Typography.Text></div>} extra={<Space wrap className="people-cost-actions"><Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>Mã QR</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}>
         <Table rowKey="user_id" loading={loading} columns={columns} dataSource={visible} pagination={false} scroll={{ x: 950 }} locale={{ emptyText: <Empty description="Chưa có dữ liệu đối soát" /> }} />
       </Card>
 
@@ -731,7 +742,8 @@ export function ReportView({ organizationId, propertyId, users, financialPeriod,
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const collected = people.filter((person) => person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
   const outstanding = people.filter((person) => !person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
-  const collectionRate = collected + outstanding ? Math.round(collected / (collected + outstanding) * 100) : 0;
+  const collectibleTotal = collected + outstanding;
+  const collectionRate = collectibleTotal ? Math.round(collected / collectibleTotal * 100) : 0;
   const largest = [...expenses].sort((a, b) => b.amount - a.amount)[0];
   const topPayer = [...people].sort((a, b) => b.advanced - a.advanced)[0];
 
@@ -740,13 +752,13 @@ export function ReportView({ organizationId, propertyId, users, financialPeriod,
     <div className="page-stack">
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
       <ViewSummary items={[
-        { label: "Tổng chi kỳ này", value: vnd.format(total), note: financialPeriodShortLabel(periodStart), icon: <WalletOutlined /> },
-        { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% cần thu`, icon: <CheckCircleFilled /> },
-        { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined /> },
-        { label: "Số thành viên", value: `${people.length} người`, note: "Không tính quản trị viên", icon: <TeamOutlined /> },
+        { label: "Tổng chi kỳ này", value: vnd.format(total), note: financialPeriodShortLabel(periodStart), icon: <WalletOutlined />, tone: "neutral" },
+        { label: "Tổng cần thu", value: vnd.format(collectibleTotal), note: `${people.filter((person) => person.balance > 0).length} thành viên cần đóng`, icon: <TeamOutlined />, tone: "blue" },
+        { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% trên tổng cần thu`, icon: <CheckCircleFilled />, tone: "green" },
+        { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined />, tone: outstanding > 0 ? "orange" : "green" },
       ]} />
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div><Flex justify="space-between"><Typography.Text>Tiến độ đã thu</Typography.Text><Typography.Text strong>{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
+        <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div className="collection-progress"><Flex justify="space-between" gap={16} wrap><div><Typography.Text strong>Đã thu {vnd.format(collected)}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">Trên tổng cần thu {vnd.format(collectibleTotal)}</Typography.Text></div><Typography.Text strong className="collection-rate">{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} showInfo={false} strokeColor="#087a58" /><Typography.Text type="secondary" className="collection-explanation">Tỷ lệ = số tiền thành viên đã xác nhận thanh toán / tổng số tiền các thành viên cần đóng.</Typography.Text></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
         <Col xs={24} lg={10}><Card title={`Tóm tắt kỳ ${financialPeriodShortLabel(periodStart)}`} className="section-card"><Descriptions column={1} bordered><Descriptions.Item label="Khoản chi lớn nhất">{largest?.category ?? "—"}</Descriptions.Item><Descriptions.Item label="Người ứng nhiều nhất">{topPayer?.advanced ? topPayer.full_name : "—"}</Descriptions.Item><Descriptions.Item label="Số người đã đóng">{people.filter((person) => person.paid).length}/{people.length}</Descriptions.Item><Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã hoàn tất"}</Tag></Descriptions.Item></Descriptions></Card></Col>
       </Row>
     </div>
@@ -869,6 +881,9 @@ export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { 
   );
 }
 
-function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode }[] }) {
-  return <Row gutter={[16, 16]}>{items.map((item, index) => <Col xs={12} sm={12} xl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${["green", "blue", "orange", "purple"][index % 4]}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${["green", "blue", "orange", "purple"][index % 4]}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>)}</Row>;
+function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode; tone?: SummaryTone }[] }) {
+  return <Row gutter={[16, 16]}>{items.map((item) => {
+    const tone = item.tone ?? "neutral";
+    return <Col xs={24} sm={12} xxl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${tone}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${tone}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>;
+  })}</Row>;
 }

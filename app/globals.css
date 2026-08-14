@@ -5,7 +5,7 @@
 :root {
   --ink-950: #10271f;
   --ink-700: #375348;
-  --ink-500: #71837b;
+  --ink-500: #5f736a;
   --brand-700: #086b4d;
   --brand-600: #0a8060;
   --brand-100: #dff3ea;
@@ -108,6 +108,11 @@ select {
   letter-spacing: -0.1px;
 }
 
+.main-menu .ant-menu-item:not(.ant-menu-item-selected):hover {
+  background: #f1f7f4 !important;
+  color: var(--brand-700) !important;
+}
+
 .sider-account {
   display: grid;
   gap: 16px;
@@ -147,8 +152,8 @@ select {
   max-width: 1640px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 28px clamp(24px, 3vw, 48px) 60px;
-  font-size: 14px;
+  padding: 28px clamp(24px, 3vw, 48px) 112px;
+  font-size: 15px;
 }
 
 .dashboard-content .ant-typography-secondary {
@@ -175,7 +180,7 @@ select {
 .page-subtitle {
   display: block;
   color: var(--ink-500) !important;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .period-label,
@@ -363,8 +368,8 @@ select {
   grid-template-columns: minmax(0, 1.6fr) minmax(280px, .7fr);
   align-items: center;
   gap: 32px;
-  min-height: 230px;
-  padding: clamp(26px, 4vw, 44px);
+  min-height: 190px;
+  padding: clamp(24px, 3vw, 36px);
   overflow: hidden;
   border-radius: 24px;
   color: #fff;
@@ -411,6 +416,8 @@ select {
 
 .personal-balance-card small {
   color: #d7ede5;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .personal-expense-list {
@@ -636,9 +643,11 @@ select {
   content: "";
 }
 
+.summary-card-neutral::before { background: #73847c; }
 .summary-card-orange::before { background: #e58a29; }
 .summary-card-blue::before { background: #4b8ccf; }
 .summary-card-purple::before { background: #8067d8; }
+.summary-card-danger::before { background: #d14343; }
 
 .summary-card .ant-card-body {
   display: grid;
@@ -650,7 +659,7 @@ select {
 .summary-card .ant-statistic-title {
   margin-bottom: 10px;
   color: var(--ink-500);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .summary-card .ant-statistic-content {
@@ -662,7 +671,7 @@ select {
 
 .summary-card > .ant-card-body > .ant-typography {
   margin-top: auto;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .metric-icon {
@@ -680,6 +689,11 @@ select {
   color: #087a58;
 }
 
+.metric-icon.neutral {
+  background: #edf2ef;
+  color: #52675e;
+}
+
 .metric-icon.orange {
   background: #fff0dd;
   color: #c66d12;
@@ -693,6 +707,11 @@ select {
 .metric-icon.purple {
   background: #eee9fb;
   color: #7152c7;
+}
+
+.metric-icon.danger {
+  background: #fdeaea;
+  color: #c53d3d;
 }
 
 .quick-card {
@@ -1603,4 +1622,72 @@ select {
   .status-filter {
     width: 100%;
   }
+}
+
+/* Readability and semantic interaction refinements. */
+.card-title-note,
+.cell-subtext { font-size: 12px; }
+
+.room-card-meta { font-size: 12px; }
+
+.room-action-button {
+  min-width: 38px;
+  min-height: 38px;
+  padding-inline: 9px;
+}
+
+.room-delete-button { color: #6b7a74; }
+.room-delete-button:hover {
+  color: #d14343 !important;
+  background: #fff0f0 !important;
+}
+
+.participant-preview .ant-tag {
+  max-width: 76px;
+  overflow: hidden;
+  margin-inline-end: 0;
+  text-overflow: ellipsis;
+}
+
+.participant-more {
+  cursor: help;
+  color: var(--brand-700);
+  background: #e8f5ef;
+}
+
+.participant-popover {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.balance-cell { display: grid; gap: 3px; }
+.balance-cell > .ant-typography:last-child { font-size: 16px; }
+
+.own-settlement .ant-checkbox-wrapper {
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.payment-progress .ant-progress-text { font-size: 21px !important; }
+.payment-progress > span { font-size: 14px; }
+
+.collection-progress {
+  padding: 16px;
+  border: 1px solid #dce8e2;
+  border-radius: 14px;
+  background: #f7faf8;
+}
+
+.collection-rate {
+  color: var(--brand-700);
+  font-size: 22px;
+}
+
+.collection-explanation {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
 }

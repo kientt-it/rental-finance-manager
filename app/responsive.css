@@ -850,3 +850,31 @@ body {
     justify-items: start;
   }
 }
+
+@media (max-width: 767px) {
+  .dashboard-content {
+    padding-bottom: 104px;
+  }
+
+  .summary-card .ant-card-body {
+    min-height: 118px;
+    padding: 16px;
+  }
+
+  .summary-card .ant-statistic-title {
+    min-height: auto;
+    font-size: 12px;
+  }
+
+  .summary-card .ant-statistic-content {
+    font-size: clamp(20px, 6vw, 24px);
+  }
+
+  .summary-card > .ant-card-body > .ant-typography {
+    font-size: 11px;
+  }
+
+  .personal-qr-action > .ant-btn {
+    flex: 1 1 150px;
+  }
+}

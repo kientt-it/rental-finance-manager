@@ -38,6 +38,7 @@ import {
   BellOutlined,
   CalendarOutlined,
   CreditCardOutlined,
+  CopyOutlined,
   DashboardOutlined,
   DollarOutlined,
   DownloadOutlined,
@@ -57,7 +58,7 @@ import {
 import { createClient } from "@/lib/supabase/browser";
 import { formatMoneyInput } from "@/lib/money";
 import { currentPeriodStart, financialPeriodLabel, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
-import { createPeriodExcelXml, downloadPeriodExcel } from "@/lib/period-excel";
+import { createPeriodXlsx, downloadPeriodXlsx } from "@/lib/period-xlsx";
 import { ExpensesView, MembersView, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 import SupportFloatingActions from "./support-floating-actions";
 
@@ -338,13 +339,13 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
       const advanced = expenses.filter((expense) => expense.payer_member_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
       return { full_name: user.full_name, allocated, advanced, balance: allocated - advanced, paid: paidMap.get(user.user_id) ?? false, bank_account: user.bank_account, bank_name: user.bank_name };
     });
-    const xmlContent = createPeriodExcelXml({
+    const xlsxContent = createPeriodXlsx({
       propertyName: data.property_name || "708 La Thành",
       periodLabel: financialPeriodLabel(period.period_start),
       expenses: expenses.map((expense) => ({
         category: expense.category,
         amount: expense.amount,
-        expense_date: dayjs(expense.expense_date).format("DD/MM/YYYY"),
+        expense_date: expense.expense_date,
         payer: nameByMember.get(expense.payer_member_id ?? "") ?? "—",
         participants: expense.expense_member_participants.map((participant) => nameByMember.get(participant.member_id)).filter(Boolean).join(", "),
         status: expense.status === "completed" ? "Hoàn thành" : "Chờ xử lý",
@@ -353,7 +354,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
       })),
       people,
     });
-    downloadPeriodExcel(xmlContent, `708-la-thanh-${dayjs(period.period_start).format("YYYY-MM")}.xls`);
+    downloadPeriodXlsx(xlsxContent, `708-la-thanh-${dayjs(period.period_start).format("YYYY-MM")}.xlsx`);
     const { error: markError } = await supabase.rpc("mark_financial_period_exported", { target_period_id: period.id });
     setPeriodSaving(false);
     if (markError) {
@@ -538,6 +539,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               currentRole={currentRole}
               financialPeriod={selectedPeriod}
               periodStart={selectedPeriodStart}
+              onNotice={setNotice}
             />
           )}
           {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
@@ -667,7 +669,7 @@ type PersonalExpense = {
   expense_member_participants: PersonalExpenseParticipant[];
 };
 
-function Overview({ organizationId, propertyId, currentMember, users, displayName, currentRole, financialPeriod, periodStart }: {
+function Overview({ organizationId, propertyId, currentMember, users, displayName, currentRole, financialPeriod, periodStart, onNotice }: {
   organizationId: string;
   propertyId: string;
   currentMember: OrganizationUser | null;
@@ -676,6 +678,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
   currentRole: "admin" | "member";
   financialPeriod: FinancialPeriod | null;
   periodStart: string;
+  onNotice: (message: string) => void;
 }) {
   const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
   const [settled, setSettled] = useState(false);
@@ -685,6 +688,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
   const [qrFileName, setQrFileName] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [qrOpen, setQrOpen] = useState(false);
+  const [settlementSaving, setSettlementSaving] = useState(false);
 
   useEffect(() => {
     async function loadPersonalOverview() {
@@ -788,6 +792,39 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
     link.remove();
   }
 
+  async function copyText(value: string, label: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      onNotice(`Đã sao chép ${label}.`);
+    } catch {
+      onNotice(`Không thể sao chép ${label}.`);
+    }
+  }
+
+  async function confirmOwnPayment() {
+    if (!currentMember || !financialPeriod) return;
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể cập nhật thanh toán.");
+    setSettlementSaving(true);
+    const supabase = createClient();
+    const nextSettled = !settled;
+    const { error } = await supabase.from("household_member_settlements").upsert({
+      organization_id: organizationId,
+      property_id: propertyId,
+      member_id: currentMember.user_id,
+      period: periodStart,
+      financial_period_id: financialPeriod.id,
+      is_settled: nextSettled,
+      settled_at: nextSettled ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "property_id,member_id,period" });
+    setSettlementSaving(false);
+    if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
+    await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
+    setSettled(nextSettled);
+    onNotice(nextSettled ? `Đã xác nhận bạn thanh toán ${money.format(Math.max(balance, 0))}.` : "Đã chuyển trạng thái của bạn về chưa thanh toán.");
+  }
+
   return (
     <div className="page-stack personal-overview-page">
       <section className="personal-overview-hero">
@@ -799,7 +836,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
         <div className="personal-balance-card">
           <span>{settled ? "TRẠNG THÁI THÁNG NÀY" : "CÒN PHẢI ĐÓNG"}</span>
           <strong>{loading ? "—" : settled ? "Đã đóng đủ" : money.format(remaining)}</strong>
-          <small>{settled ? "Đã được xác nhận thanh toán" : remaining > 0 ? "Cần chuyển cho người nhận hoàn" : receivable > 0 ? `Được nhận lại ${money.format(receivable)}` : "Không còn khoản phải đóng"}</small>
+          <small>{settled ? "Bạn đã xác nhận hoàn tất thanh toán" : remaining > 0 ? `Bạn cần thanh toán cho ${receiver?.full_name ?? "người nhận hoàn"}` : receivable > 0 ? `Được nhận lại ${money.format(receivable)}` : "Không còn khoản phải đóng"}</small>
         </div>
       </section>
 
@@ -809,10 +846,10 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
       {loadError && <Alert type="error" showIcon title={loadError} />}
 
       <Row gutter={[16, 16]}>
-        <MetricCard loading={loading} title="Số tiền đã chi" value={advanced} note={`${expenses.filter((expense) => expense.payer_member_id === currentMember?.user_id).length} khoản bạn thanh toán`} icon={<WalletOutlined />} tone="green" />
-        <MetricCard loading={loading} title="Phần được chia" value={allocated} note={`${participatingExpenses.length} khoản bạn tham gia`} icon={<TeamOutlined />} tone="blue" />
+        <MetricCard loading={loading} title="Số tiền đã chi" value={advanced} note={`${expenses.filter((expense) => expense.payer_member_id === currentMember?.user_id).length} khoản bạn thanh toán`} icon={<WalletOutlined />} tone="blue" />
+        <MetricCard loading={loading} title="Phần chi phí của bạn" value={allocated} note={`${participatingExpenses.length} khoản bạn tham gia`} icon={<TeamOutlined />} tone="neutral" />
         <MetricCard loading={loading} title="Còn phải đóng" value={remaining} note={settled ? "Đã xác nhận đóng đủ" : "Sau khi trừ số tiền đã ứng"} icon={<CreditCardOutlined />} tone="orange" />
-        <MetricCard loading={loading} title="Được nhận lại" value={receivable} note={receivable > 0 ? "Số tiền các thành viên hoàn lại" : "Không phát sinh hoàn tiền"} icon={<BankOutlined />} tone="purple" />
+        <MetricCard loading={loading} title="Được nhận lại" value={receivable} note={receivable > 0 ? "Số tiền các thành viên hoàn lại" : "Không phát sinh hoàn tiền"} icon={<BankOutlined />} tone="green" />
       </Row>
 
       <Card className="section-card personal-qr-overview-card">
@@ -822,13 +859,15 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
             <div>
               <Typography.Title level={5}>Mã QR thanh toán</Typography.Title>
               <Typography.Text type="secondary">
-                Chuyển khoản cho Dương Thế Hải
+                {remaining > 0 ? `Chuyển khoản cho ${receiver?.full_name ?? "người nhận hoàn"}` : settled ? "Khoản thanh toán đã được xác nhận" : "Bạn không có khoản cần thanh toán"}
               </Typography.Text>
             </div>
           </Flex>
           <Flex align="center" gap={20} wrap className="personal-qr-action">
-            <div><Typography.Text type="secondary">Số tiền của bạn</Typography.Text><Typography.Text strong>{money.format(remaining)}</Typography.Text></div>
-            <Button type="primary" icon={<QrcodeOutlined />} disabled={!qrImage} loading={qrLoading} onClick={() => setQrOpen(true)}>Xem mã QR</Button>
+            <div><Typography.Text type="secondary">Số tiền cần chuyển</Typography.Text><Typography.Text strong>{money.format(remaining)}</Typography.Text></div>
+            {receiver?.bank_account && <Button icon={<CopyOutlined />} onClick={() => void copyText(receiver.bank_account, "số tài khoản")}>Sao chép STK</Button>}
+            <Button type="primary" icon={<QrcodeOutlined />} disabled={!qrImage || remaining <= 0} loading={qrLoading} onClick={() => setQrOpen(true)}>Quét QR để thanh toán</Button>
+            {currentMember && financialPeriod && balance > 0 && <Popconfirm title={settled ? "Chuyển về chưa thanh toán?" : "Bạn đã chuyển khoản xong?"} description={settled ? "Trạng thái sẽ được mở lại." : "Chỉ xác nhận sau khi giao dịch đã hoàn tất."} okText="Xác nhận" cancelText="Hủy" onConfirm={() => void confirmOwnPayment()}><Button loading={settlementSaving} disabled={financialPeriod.status === "closed"}>{settled ? "Đã xác nhận thanh toán" : "Đã chuyển khoản"}</Button></Popconfirm>}
           </Flex>
         </Flex>
       </Card>
@@ -860,7 +899,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
             <Progress percent={flowTotal ? Math.round(advanced / flowTotal * 100) : 0} showInfo={false} strokeColor="#087a58" railColor="#f6d9b9" />
             <Flex vertical gap={16} className="personal-flow-lines">
               <CashflowLine color="#087a58" label="Bạn đã chi" value={advanced} />
-              <CashflowLine color="#e09036" label="Phần được chia" value={allocated} />
+              <CashflowLine color="#e09036" label="Phần chi phí của bạn" value={allocated} />
               <CashflowLine color={netCashflow >= 0 ? "#087a58" : "#d14343"} label={netCashflow >= 0 ? "Chênh lệch được nhận" : "Chênh lệch cần đóng"} value={Math.abs(netCashflow)} />
             </Flex>
           </Card>
@@ -871,6 +910,11 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
         <div className="qr-content">
           {qrImage ? <div className="payment-qr-frame"><Image src={qrImage} alt="Mã QR thanh toán" preview /></div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có mã QR thanh toán" />}
           <Statistic title="Số tiền cần chuyển" value={remaining} formatter={(value) => money.format(Number(value))} />
+          {receiver && <Typography.Text>Người nhận: <strong>{receiver.full_name}</strong>{receiver.bank_account ? ` · ${receiver.bank_name || "Ngân hàng"} · ${receiver.bank_account}` : ""}</Typography.Text>}
+          <Space wrap>
+            {receiver?.bank_account && <Button icon={<CopyOutlined />} onClick={() => void copyText(receiver.bank_account, "số tài khoản")}>Sao chép STK</Button>}
+            {remaining > 0 && <Button icon={<CopyOutlined />} onClick={() => void copyText(String(Math.round(remaining)), "số tiền")}>Sao chép số tiền</Button>}
+          </Space>
           {qrImage && <Button icon={<DownloadOutlined />} onClick={downloadPaymentQr}>Tải QR về máy</Button>}
         </div>
       </Modal>
@@ -996,7 +1040,7 @@ function LegacyOverview({
 
 function MetricCard({ loading, title, value, note, icon, tone }: { loading: boolean; title: string; value: number; note: string; icon: React.ReactNode; tone: string }) {
   return (
-    <Col xs={12} sm={12} xl={6} className="summary-col">
+    <Col xs={24} sm={12} xxl={6} className="summary-col">
       <Card className={`summary-card summary-card-${tone}`}>
         <Flex justify="space-between" align="flex-start">
           <Statistic title={title} value={loading ? 0 : value} formatter={(current) => loading ? "—" : money.format(Number(current))} />
