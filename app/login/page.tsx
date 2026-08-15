@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Card, Col, Flex, Form, Input, Row, Space, Typography } from "antd";
-import { CheckCircleFilled, GoogleOutlined, LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
+import { CheckCircleFilled, LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 
 type LoginValues = { username: string; email?: string; password: string };
@@ -101,6 +101,7 @@ export default function LoginPage() {
         <Col xs={24} lg={13} className="auth-hero">
           <div className="auth-hero-content">
             <div className="app-brand auth-logo"><span className="brand-badge inverse">708</span><span>La Thành</span></div>
+            <Typography.Text className="auth-mobile-tagline">Theo dõi phòng, hóa đơn, công nợ và chi phí trên mọi thiết bị với một giao diện rõ ràng, nhất quán.</Typography.Text>
             <Typography.Text className="auth-kicker">TÀI CHÍNH NHÀ TRỌ, GỌN TRONG MỘT NƠI</Typography.Text>
             <Typography.Title>Nắm dòng tiền.<br />Nhẹ việc quản lý.</Typography.Title>
             <Typography.Paragraph>Theo dõi phòng, hóa đơn, công nợ và chi phí trên mọi thiết bị với một giao diện rõ ràng, nhất quán.</Typography.Paragraph>
@@ -112,13 +113,19 @@ export default function LoginPage() {
         </Col>
         <Col xs={24} lg={11} className="auth-form-column">
           <Card className="auth-card">
-            <Typography.Text className="form-eyebrow">{mode === "login" ? "CHÀO MỪNG TRỞ LẠI" : "BẮT ĐẦU MIỄN PHÍ"}</Typography.Text>
-            <Typography.Title level={2}>{mode === "login" ? "Đăng nhập 708 La Thành" : "Tạo tài khoản"}</Typography.Title>
-            <Typography.Paragraph type="secondary">{mode === "login" ? "Đăng nhập bằng tên tài khoản hoặc tiếp tục với Google." : "Chỉ cần tên tài khoản và mật khẩu. Email là tùy chọn."}</Typography.Paragraph>
+            <div className="auth-card-header">
+              <Typography.Text className="form-eyebrow">{mode === "login" ? "CHÀO MỪNG TRỞ LẠI" : "BẮT ĐẦU MIỄN PHÍ"}</Typography.Text>
+              <Typography.Title level={2}>{mode === "login" ? "Đăng nhập" : "Tạo tài khoản"}</Typography.Title>
+              <Typography.Paragraph type="secondary">{mode === "login" ? "Tiếp tục để quản lý phòng và dòng tiền của bạn." : "Tạo tài khoản trong chưa đầy một phút."}</Typography.Paragraph>
+            </div>
 
             {message && <Alert className="auth-alert" showIcon type={messageType} title={message} />}
 
             <Form form={form} layout="vertical" onFinish={submit} requiredMark={false} size="large">
+              <Button className="auth-google-button" icon={<GoogleMark />} onClick={() => void signInWithGoogle()} disabled={loading} block>
+                {mode === "login" ? "Tiếp tục với Google" : "Đăng ký với Google"}
+              </Button>
+              <div className="auth-divider"><span>hoặc dùng tài khoản</span></div>
               <Form.Item
                 name="username"
                 label={mode === "login" ? "Tên tài khoản hoặc email" : "Tên tài khoản"}
@@ -134,13 +141,13 @@ export default function LoginPage() {
               <Form.Item name="password" label="Mật khẩu" rules={[{ required: true, message: "Nhập mật khẩu" }, { min: 6, message: "Mật khẩu cần ít nhất 6 ký tự" }]}>
                 <Input.Password prefix={<LockOutlined />} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 6 ký tự" />
               </Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading} block>{mode === "login" ? "Đăng nhập" : "Tạo tài khoản"}</Button>
-              <div className="auth-divider"><span>hoặc</span></div>
-              <Button icon={<GoogleOutlined />} onClick={() => void signInWithGoogle()} disabled={loading} block>Tiếp tục với Google</Button>
-              <Button type="link" onClick={switchMode} block className="auth-switch">
-                {mode === "login" ? "Chưa có tài khoản? Đăng ký" : "Đã có tài khoản? Đăng nhập"}
-              </Button>
+              <Button className="auth-submit" type="primary" htmlType="submit" loading={loading} block>{mode === "login" ? "Đăng nhập" : "Tạo tài khoản"}</Button>
+              <div className="auth-switch">
+                <Typography.Text>{mode === "login" ? "Chưa có tài khoản?" : "Đã có tài khoản?"}</Typography.Text>
+                <Button type="link" onClick={switchMode}>{mode === "login" ? "Đăng ký" : "Đăng nhập"}</Button>
+              </div>
             </Form>
+            <div className="auth-trust-note"><SafetyCertificateOutlined /><span>Thông tin đăng nhập được mã hóa và bảo vệ.</span></div>
           </Card>
         </Col>
       </Row>
@@ -150,4 +157,15 @@ export default function LoginPage() {
 
 function Benefit({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return <Flex gap={12} align="flex-start"><span className="benefit-icon">{icon}</span><div><Typography.Text strong>{title}</Typography.Text><Typography.Text>{description}</Typography.Text></div></Flex>;
+}
+
+function GoogleMark() {
+  return (
+    <svg className="google-mark" viewBox="0 0 18 18" aria-hidden="true">
+      <path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.715v2.259h2.909c1.702-1.567 2.684-3.874 2.684-6.615Z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.259c-.806.54-1.835.859-3.047.859-2.344 0-4.328-1.585-5.037-3.714H.956v2.333A9 9 0 0 0 9 18Z" />
+      <path fill="#FBBC05" d="M3.963 10.706A5.41 5.41 0 0 1 3.682 9c0-.592.102-1.167.281-1.706V4.961H.956A9 9 0 0 0 0 9c0 1.452.347 2.827.956 4.039l3.007-2.333Z" />
+      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.441 1.346l2.581-2.582C13.463.892 11.426 0 9 0A9 9 0 0 0 .956 4.961l3.007 2.333C4.672 5.165 6.656 3.58 9 3.58Z" />
+    </svg>
+  );
 }

@@ -602,7 +602,8 @@ body {
     font-size: 11px;
   }
 
-  .payment-progress .ant-progress-text {
+  .payment-progress .ant-progress-text,
+  .payment-progress .ant-progress-indicator {
     font-size: 16px !important;
   }
 
@@ -693,6 +694,19 @@ body {
   .people-cost-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .people-cost-table .ant-table-cell-fix-left,
+  .people-cost-table .ant-table-cell-fix-left-last {
+    position: static !important;
+  }
+
+  .people-cost-table .ant-table-cell:first-child {
+    width: 54%;
+  }
+
+  .people-cost-table .ant-table-cell:last-child {
+    width: 46%;
   }
 
   .payment-qr-modal {
