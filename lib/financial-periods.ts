@@ -4,6 +4,7 @@ export type FinancialPeriod = {
   id: string;
   period_start: string;
   status: "open" | "closed";
+  is_default: boolean;
   exported_at: string | null;
   expense_count: number;
   total_amount: number;
@@ -25,4 +26,3 @@ export function financialPeriodShortLabel(periodStart: string) {
 export function financialPeriodEnd(periodStart: string) {
   return dayjs(periodStart).add(1, "month").format("YYYY-MM-DD");
 }
-

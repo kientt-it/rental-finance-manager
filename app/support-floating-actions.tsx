@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Card,
   Descriptions,
   Divider,
   Empty,
@@ -220,12 +221,112 @@ export default function SupportFloatingActions({ organizationId, propertyId, can
             <Space wrap className="donate-qr-actions">
               <Button icon={<UploadOutlined />} onClick={() => qrInputRef.current?.click()}>{pendingDonateQr ? "Thay ảnh QR" : "Tải ảnh QR"}</Button>
               {pendingDonateQr && <Button danger icon={<DeleteOutlined />} onClick={() => { setPendingDonateQr(null); setPendingDonateQrName(null); }}>Xóa ảnh</Button>}
-              {pendingDonateQrName && <Typography.Text type="secondary">{pendingDonateQrName}</Typography.Text>}
             </Space>
             <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving} block className="donate-save-button">Lưu thông tin Donate</Button>
           </Form>
         </>}
       </Modal>
     </>
+  );
+}
+
+export function SupportSettingsManagement({ organizationId, propertyId, onNotice }: {
+  organizationId: string;
+  propertyId: string;
+  onNotice: (message: string) => void;
+}) {
+  const [settings, setSettings] = useState<SupportSettings>(emptySettings);
+  const [pendingDonateQr, setPendingDonateQr] = useState<string | null>(null);
+  const [pendingDonateQrName, setPendingDonateQrName] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [reportForm] = Form.useForm<ReportForm>();
+  const [donateForm] = Form.useForm<DonateForm>();
+  const qrInputRef = useRef<HTMLInputElement>(null);
+
+  const loadSettings = useCallback(async () => {
+    if (!propertyId) return;
+    setError("");
+    const { data, error: loadError } = await createClient().from("support_settings")
+      .select("report_contact_label, report_contact_url, donate_message, donate_qr_image_data, donate_qr_file_name, donate_account_name, donate_bank_account, donate_bank_name")
+      .eq("property_id", propertyId)
+      .maybeSingle();
+    if (loadError) {
+      setError("Không tải được thông tin hỗ trợ. Hãy kiểm tra migration 0014.");
+      return;
+    }
+    const next = data ? data as SupportSettings : emptySettings;
+    setSettings(next);
+    setPendingDonateQr(next.donate_qr_image_data);
+    setPendingDonateQrName(next.donate_qr_file_name);
+    reportForm.setFieldsValue({ report_contact_label: next.report_contact_label ?? "", report_contact_url: next.report_contact_url ?? "" });
+    donateForm.setFieldsValue({
+      donate_message: next.donate_message ?? "",
+      donate_account_name: next.donate_account_name ?? "",
+      donate_bank_account: next.donate_bank_account ?? "",
+      donate_bank_name: next.donate_bank_name ?? "",
+    });
+  }, [donateForm, propertyId, reportForm]);
+
+  useEffect(() => { void loadSettings(); }, [loadSettings]);
+
+  async function savePatch(patch: Partial<SupportSettings>, successMessage: string) {
+    setSaving(true);
+    const next = { ...settings, ...patch };
+    const { error: saveError } = await createClient().from("support_settings").upsert({
+      property_id: propertyId,
+      organization_id: organizationId,
+      ...next,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "property_id" });
+    setSaving(false);
+    if (saveError) {
+      setError("Không thể lưu cấu hình hỗ trợ. Hãy kiểm tra quyền quản trị viên và migration 0014.");
+      return onNotice("Không thể lưu cấu hình hỗ trợ.");
+    }
+    setSettings(next);
+    setError("");
+    onNotice(successMessage);
+  }
+
+  async function chooseQr(file: File) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onNotice("Ảnh QR phải là PNG, JPG hoặc WebP.");
+    if (file.size > 1.5 * 1024 * 1024) return onNotice("Ảnh QR tối đa 1,5 MB.");
+    try {
+      setPendingDonateQr(await fileToDataUrl(file));
+      setPendingDonateQrName(file.name.slice(0, 160));
+    } catch {
+      onNotice("Không thể đọc ảnh QR.");
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      {error && <Alert type="error" showIcon title={error} />}
+      <Card className="section-card admin-hub-card" title={<div><span>Kênh Report / Liên hệ</span><Typography.Text type="secondary" className="card-title-note">Nội dung thành viên nhìn thấy từ nút hỗ trợ nổi</Typography.Text></div>}>
+        <Form form={reportForm} layout="vertical" onFinish={(values) => void savePatch({ report_contact_label: values.report_contact_label?.trim() || null, report_contact_url: values.report_contact_url?.trim() || null }, "Đã cập nhật kênh Report/liên hệ.")}>
+          <Form.Item name="report_contact_label" label="Tên kênh liên hệ"><Input placeholder="Ví dụ: Facebook" maxLength={120} /></Form.Item>
+          <Form.Item name="report_contact_url" label="Link Facebook / liên hệ" rules={[{ type: "url", message: "Nhập link bắt đầu bằng http:// hoặc https://" }]}><Input placeholder="https://facebook.com/..." /></Form.Item>
+          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>Lưu kênh liên hệ</Button>
+        </Form>
+      </Card>
+      <Card className="section-card admin-hub-card" title={<div><span>Thông tin Donate</span><Typography.Text type="secondary" className="card-title-note">Lời nhắn, tài khoản ngân hàng và mã QR ủng hộ</Typography.Text></div>}>
+        <Form form={donateForm} layout="vertical" onFinish={(values) => void savePatch({ donate_message: values.donate_message?.trim() || null, donate_account_name: values.donate_account_name?.trim() || null, donate_bank_account: values.donate_bank_account?.trim() || null, donate_bank_name: values.donate_bank_name?.trim() || null, donate_qr_image_data: pendingDonateQr, donate_qr_file_name: pendingDonateQrName }, "Đã cập nhật thông tin Donate.")}>
+          <Form.Item name="donate_message" label="Lời nhắn"><Input.TextArea rows={2} maxLength={500} /></Form.Item>
+          <Form.Item name="donate_account_name" label="Tên chủ tài khoản"><Input maxLength={160} /></Form.Item>
+          <Space size={12} align="start" className="donate-bank-fields">
+            <Form.Item name="donate_bank_account" label="Số tài khoản"><Input inputMode="numeric" maxLength={80} /></Form.Item>
+            <Form.Item name="donate_bank_name" label="Ngân hàng"><Input maxLength={120} /></Form.Item>
+          </Space>
+          {pendingDonateQr && <div className="donate-qr-frame"><Image src={pendingDonateQr} alt="Mã QR donate" preview /></div>}
+          <input ref={qrInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="visually-hidden-file" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void chooseQr(file); event.currentTarget.value = ""; }} />
+          <Space wrap className="donate-qr-actions">
+            <Button icon={<UploadOutlined />} onClick={() => qrInputRef.current?.click()}>{pendingDonateQr ? "Thay ảnh QR" : "Tải ảnh QR"}</Button>
+            {pendingDonateQr && <Button danger icon={<DeleteOutlined />} onClick={() => { setPendingDonateQr(null); setPendingDonateQrName(null); }}>Xóa ảnh</Button>}
+          </Space>
+          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving} className="donate-save-button">Lưu thông tin Donate</Button>
+        </Form>
+      </Card>
+    </div>
   );
 }

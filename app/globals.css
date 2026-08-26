@@ -108,6 +108,131 @@ select {
   letter-spacing: -0.1px;
 }
 
+/* Admin hub and month-over-month spending comparison */
+.spending-comparison-card .ant-card-body {
+  display: grid;
+  gap: 22px;
+}
+
+.spending-delta {
+  display: grid;
+  gap: 3px;
+  padding: 15px 16px;
+  border-radius: 13px;
+  background: #edf7f3;
+}
+
+.spending-delta.increase {
+  background: #fff4e7;
+}
+
+.spending-delta strong {
+  color: #087a58;
+  font-size: 22px;
+}
+
+.spending-delta.increase strong {
+  color: #b86513;
+}
+
+.spending-delta span {
+  color: #557168;
+  font-size: 12px;
+}
+
+.spending-bars,
+.spending-bar-row {
+  display: grid;
+  gap: 10px;
+}
+
+.spending-bars {
+  gap: 20px;
+}
+
+.spending-bar-track {
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1ef;
+}
+
+.spending-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.35s ease;
+}
+
+.spending-bar-track .current {
+  background: linear-gradient(90deg, #087a58, #39a77f);
+}
+
+.spending-bar-track .previous {
+  background: linear-gradient(90deg, #d99a55, #f0bd7f);
+}
+
+.admin-management-tabs > .ant-tabs-nav {
+  margin-bottom: 18px;
+  padding: 0 4px;
+}
+
+.admin-period-list {
+  max-height: none;
+}
+
+.admin-qr-management {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) 1fr;
+  align-items: center;
+  gap: 28px;
+  min-height: 340px;
+}
+
+.admin-qr-copy {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.admin-qr-copy h4.ant-typography,
+.admin-qr-copy .ant-typography {
+  margin: 0;
+}
+
+.admin-qr-actions {
+  width: 100%;
+}
+
+.admin-qr-info {
+  width: 100%;
+  max-width: 620px;
+  padding: 18px;
+  border: 1px solid #e1eae6;
+  border-radius: 16px;
+  background: #f8faf9;
+}
+
+.admin-qr-info .ant-form-item:last-of-type {
+  margin-bottom: 16px;
+}
+
+.admin-qr-hint {
+  font-size: 11px;
+}
+
+.qr-payment-info {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dfe8e4;
+  border-radius: 12px;
+  background: #f5f8f6;
+  text-align: center;
+}
+
 .main-menu .ant-menu-item:not(.ant-menu-item-selected):hover {
   background: #f1f7f4 !important;
   color: var(--brand-700) !important;
@@ -1167,7 +1292,7 @@ select {
   display: grid;
   width: min(280px, 100%);
   min-height: 210px;
-  margin: 0 auto;
+  margin: 4px auto 14px;
   padding: 12px;
   border: 1px solid #d9e6e0;
   border-radius: 16px;

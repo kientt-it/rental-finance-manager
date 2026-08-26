@@ -866,6 +866,14 @@ body {
 }
 
 @media (max-width: 767px) {
+  .admin-qr-management {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-management-tabs .ant-tabs-nav-list {
+    min-width: max-content;
+  }
+
   .dashboard-content {
     padding-bottom: 104px;
   }
@@ -891,4 +899,484 @@ body {
   .personal-qr-action > .ant-btn {
     flex: 1 1 150px;
   }
+}
+
+/* Compact, overflow-safe admin workspace */
+@media (max-width: 767px) {
+  .admin-management-page {
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .admin-management-page > .ant-alert {
+    padding: 9px 11px;
+    font-size: 11px;
+  }
+
+  .admin-management-tabs,
+  .admin-management-tabs .ant-tabs-content-holder,
+  .admin-management-tabs .ant-tabs-content,
+  .admin-management-tabs .ant-tabs-tabpane {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-management-tabs > .ant-tabs-nav {
+    max-width: 100%;
+    margin: 0 0 12px;
+    padding: 0;
+  }
+
+  .admin-management-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .admin-management-tabs > .ant-tabs-nav .ant-tabs-nav-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-management-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+    min-width: max-content;
+    transform: none !important;
+  }
+
+  .admin-management-tabs > .ant-tabs-nav .ant-tabs-nav-operations {
+    display: none !important;
+  }
+
+  .admin-management-tabs .ant-tabs-tab {
+    margin: 0 16px 0 0 !important;
+    padding: 9px 0;
+    font-size: 12px;
+  }
+
+  .admin-management-tabs .ant-tabs-tab .ant-space {
+    gap: 5px !important;
+  }
+
+  .admin-management-page .summary-col {
+    padding: 5px !important;
+  }
+
+  .admin-management-page .summary-card .ant-card-body {
+    min-height: 126px;
+    padding: 13px;
+  }
+
+  .admin-management-page .summary-card .metric-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  .admin-management-page .summary-card .ant-statistic-content {
+    font-size: clamp(18px, 5.6vw, 23px);
+  }
+
+  .period-create-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    margin-top: 12px;
+    padding: 10px;
+  }
+
+  .period-create-row .ant-picker,
+  .period-create-row .ant-btn {
+    width: 100%;
+  }
+
+  .period-manager-item {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .period-manager-item > .ant-space {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px !important;
+  }
+
+  .period-manager-item > .ant-space > .ant-space-item,
+  .period-manager-item > .ant-space .ant-btn {
+    width: 100%;
+  }
+
+  .admin-qr-management {
+    place-items: stretch;
+    gap: 16px;
+    min-height: 0;
+  }
+
+  .admin-qr-management .payment-qr-frame,
+  .admin-qr-management .payment-qr-skeleton {
+    width: min(260px, 100%) !important;
+    min-height: 190px;
+    margin-inline: auto;
+  }
+
+  .admin-qr-copy {
+    justify-items: stretch;
+    gap: 8px;
+    text-align: center;
+  }
+
+  .admin-qr-copy h4.ant-typography {
+    font-size: 18px;
+  }
+
+  .admin-qr-copy > .ant-space {
+    display: grid !important;
+    width: 100%;
+  }
+
+  .admin-qr-copy > .ant-space .ant-btn {
+    width: 100%;
+  }
+
+  .admin-hub-card .ant-form-item {
+    margin-bottom: 14px;
+  }
+
+  .admin-hub-card form > .ant-btn,
+  .admin-hub-card .donate-save-button {
+    width: 100%;
+  }
+
+  .admin-hub-card .donate-qr-actions {
+    display: grid !important;
+    gap: 8px !important;
+    margin-top: 0;
+  }
+
+  .admin-hub-card .donate-qr-actions > .ant-space-item,
+  .admin-hub-card .donate-qr-actions .ant-btn {
+    width: 100%;
+  }
+
+  .member-management-card .ant-card-head-wrapper {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .member-management-card .ant-card-extra,
+  .member-management-card .ant-card-extra .ant-btn {
+    width: 100%;
+  }
+
+  .member-mobile-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .member-mobile-card .ant-card-body {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .member-mobile-card .ant-tag {
+    flex: none;
+    margin-inline-end: 0;
+  }
+
+  .member-mobile-details {
+    display: grid;
+    grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr);
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #f5f8f6;
+  }
+
+  .member-mobile-details > span {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .member-mobile-details .ant-typography {
+    overflow-wrap: anywhere;
+    font-size: 11px;
+  }
+
+  .member-mobile-card .member-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .member-mobile-card .member-actions > .ant-space-item,
+  .member-mobile-card .member-actions .ant-btn {
+    width: 100%;
+  }
+
+  .room-view-actions,
+  .room-view-actions .ant-btn {
+    width: 100%;
+  }
+
+  .expense-management-card .ant-card-head-wrapper,
+  .people-cost-management-card .ant-card-head-wrapper {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .expense-management-card .ant-card-extra,
+  .expense-management-card .ant-card-extra .ant-btn,
+  .people-cost-management-card .ant-card-extra {
+    width: 100%;
+  }
+
+  .expense-management-card .table-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr;
+  }
+
+  .expense-management-card .table-search,
+  .expense-management-card .status-filter {
+    width: 100%;
+  }
+
+  .expense-mobile-list,
+  .people-cost-mobile-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .expense-mobile-card .ant-card-body,
+  .people-cost-mobile-card .ant-card-body {
+    display: grid;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .expense-mobile-heading,
+  .expense-mobile-amount,
+  .expense-mobile-details > span,
+  .people-cost-mobile-money > span,
+  .people-cost-mobile-bank > span {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .expense-mobile-heading .ant-typography:first-child,
+  .expense-mobile-details .ant-typography-secondary,
+  .people-cost-mobile-money .ant-typography-secondary,
+  .people-cost-mobile-bank .ant-typography-secondary {
+    font-size: 10px;
+  }
+
+  .expense-mobile-amount {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #edf6f2;
+  }
+
+  .expense-mobile-amount .ant-typography-strong {
+    color: #087a58;
+    font-size: 17px;
+    white-space: nowrap;
+  }
+
+  .expense-mobile-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .expense-mobile-participants,
+  .expense-mobile-note {
+    grid-column: 1 / -1;
+  }
+
+  .expense-mobile-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    padding-top: 4px;
+    border-top: 1px solid #edf1ef;
+  }
+
+  .expense-mobile-actions > .ant-space-item,
+  .expense-mobile-actions .ant-btn {
+    width: 100%;
+  }
+
+  .expense-mobile-total {
+    padding: 13px;
+    border-radius: 12px;
+    background: #e7f2ed;
+  }
+
+  .people-cost-actions {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 8px !important;
+  }
+
+  .people-cost-actions .ant-btn,
+  .people-cost-actions .ant-segmented {
+    width: 100%;
+  }
+
+  .people-cost-actions .ant-segmented-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .people-cost-mobile-card .own-settlement,
+  .people-cost-mobile-card .locked-settlement {
+    min-height: 0;
+  }
+
+  .people-cost-mobile-card .ant-checkbox-wrapper {
+    gap: 5px;
+  }
+
+  .people-cost-mobile-money {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .people-cost-mobile-money > span {
+    padding: 10px;
+    border-radius: 10px;
+    background: #f5f8f6;
+  }
+
+  .people-cost-mobile-money .people-cost-mobile-balance {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    background: #edf6f2;
+  }
+
+  .people-cost-mobile-money .ant-typography-strong {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .people-cost-mobile-bank {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding-top: 10px;
+    border-top: 1px solid #edf1ef;
+  }
+
+  .admin-qr-management {
+    gap: 12px;
+  }
+
+  .admin-qr-management .payment-qr-frame,
+  .admin-qr-management .payment-qr-skeleton {
+    width: min(230px, 100%) !important;
+    min-height: 180px;
+    padding: 9px;
+  }
+
+  .admin-qr-copy {
+    gap: 10px;
+  }
+
+  .admin-qr-actions {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 7px !important;
+  }
+
+  .admin-qr-actions > .ant-space-item,
+  .admin-qr-actions .ant-btn,
+  .admin-qr-info .ant-btn {
+    width: 100%;
+  }
+
+  .admin-qr-info {
+    padding: 13px;
+    text-align: left;
+  }
+
+  .report-page .summary-card .metric-icon {
+    display: none;
+  }
+
+  .report-page .summary-card .ant-statistic-content,
+  .report-page .summary-card .ant-statistic-content-value {
+    font-size: clamp(14px, 4.2vw, 17px);
+    letter-spacing: -0.45px;
+    white-space: nowrap;
+  }
+
+  .dashboard-content .summary-card .ant-statistic,
+  .dashboard-content .summary-card .ant-statistic-content,
+  .dashboard-content .summary-card .ant-statistic-content-value {
+    min-width: 0;
+  }
+
+  .dashboard-content .summary-card .ant-statistic-content,
+  .dashboard-content .summary-card .ant-statistic-content-value,
+  .admin-management-page .summary-card .ant-statistic-content,
+  .admin-management-page .summary-card .ant-statistic-content-value {
+    font-size: clamp(18px, 4.8vw, 20px) !important;
+    line-height: 1.3;
+    letter-spacing: -0.4px;
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
+
+  .dashboard-content .summary-card .metric-icon,
+  .admin-management-page .summary-card .metric-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .payment-banner .ant-row {
+    align-items: center;
+  }
+
+  .payment-banner .ant-row > .ant-col:last-child {
+    justify-self: end;
+  }
+
+  .payment-progress {
+    width: 84px;
+    place-items: center;
+    text-align: center;
+  }
+
+  .payment-progress .ant-progress {
+    display: grid;
+    width: 68px !important;
+    height: 68px !important;
+    place-items: center;
+  }
+
+  .payment-progress .ant-progress-text {
+    inset: 50% auto auto 50% !important;
+    width: auto !important;
+    margin: 0 !important;
+    transform: translate(-50%, -50%);
+    line-height: 1 !important;
+    text-align: center;
+  }
+
+  .payment-progress > span {
+    display: block;
+    width: 100%;
+    font-size: 10px;
+    line-height: 1.25;
+    text-align: center;
+    white-space: nowrap;
+  }
+
 }

@@ -11,7 +11,10 @@
 - Quản lý sơ đồ phòng và giá thuê theo tầng/kích thước.
 - Theo dõi chi phí sinh hoạt, người ứng tiền và cách phân bổ.
 - Đối soát chi phí từng người, tài khoản ngân hàng và trạng thái thanh toán.
+- Một tab quản trị tập trung cho kỳ tài chính, phòng, thành viên, mã QR và cấu hình hỗ trợ.
+- Kỳ tài chính mặc định dùng chung cho mọi thiết bị và biểu đồ so sánh chi tiêu với tháng trước.
 - Row Level Security cô lập dữ liệu giữa các tổ chức.
+- Thành viên chỉ được xem thông tin phòng; thao tác thêm, sửa và xóa dành riêng cho quản trị viên.
 - Ghi thanh toán nguyên tử để tránh sai công nợ khi có thao tác đồng thời.
 
    Chạy local
@@ -27,6 +30,15 @@
    - `supabase/migrations/0006_roles_and_full_crud.sql`
    - `supabase/migrations/0007_username_and_google_auth.sql`
    - `supabase/migrations/0008_member_management_repairs.sql`
+   - `supabase/migrations/0009_household_members.sql`
+   - `supabase/migrations/0010_exclude_admin_from_expenses.sql`
+   - `supabase/migrations/0011_payment_qr_settings.sql`
+   - `supabase/migrations/0012_self_service_account_profile.sql`
+   - `supabase/migrations/0013_financial_periods.sql`
+   - `supabase/migrations/0014_self_settlement_and_support_settings.sql`
+   - `supabase/migrations/0015_admin_hub_default_period_and_room_permissions.sql`
+   - `supabase/migrations/0016_admin_manage_member_settlements.sql`
+   - `supabase/migrations/0017_payment_qr_information.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 

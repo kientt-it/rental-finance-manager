@@ -10,10 +10,10 @@ import {
   Checkbox,
   Col,
   DatePicker,
-  Descriptions,
   Empty,
   Flex,
   Form,
+  Grid,
   Image,
   Input,
   Modal,
@@ -35,6 +35,7 @@ import {
 import {
   BankOutlined,
   CheckCircleFilled,
+  CopyOutlined,
   DeleteOutlined,
   DisconnectOutlined,
   DownloadOutlined,
@@ -121,7 +122,14 @@ type ExpenseFormValues = {
 
 type Settlement = { member_id: string; is_settled: boolean };
 type PersonCost = OrganizationUser & { allocated: number; advanced: number; balance: number; paid: boolean };
-type PaymentQrSetting = { qr_image_data: string; file_name: string | null };
+type PaymentQrSetting = {
+  qr_image_data: string | null;
+  file_name: string | null;
+  account_name: string | null;
+  bank_account: string | null;
+  bank_name: string | null;
+};
+type PaymentQrFormValues = { account_name?: string; bank_account?: string; bank_name?: string };
 
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -148,8 +156,7 @@ function errorMessage(error: { message?: string } | null, fallback: string) {
   return fallback;
 }
 
-export function RoomsView({ organizationId, propertyId, onNotice, users }: SharedProps & { users: OrganizationUser[] }) {
-  const [display, setDisplay] = useState<"Danh sách" | "Sơ đồ tầng">("Danh sách");
+export function RoomsView({ organizationId, propertyId, onNotice, users, canManage = false }: SharedProps & { users: OrganizationUser[]; canManage?: boolean }) {
   const [rooms, setRooms] = useState<RentalRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -256,43 +263,38 @@ export function RoomsView({ organizationId, propertyId, onNotice, users }: Share
         { label: "Giá bình quân", value: rooms.length ? vnd.format(totalRent / rooms.length) : vnd.format(0), note: "Mỗi phòng / tháng", icon: <BankOutlined />, tone: "neutral" },
       ]} />
 
-      <Flex className="view-actions" justify="space-between" align="center" gap={12} wrap>
-        <Segmented value={display} options={["Danh sách", "Sơ đồ tầng"]} onChange={(value) => setDisplay(value as typeof display)} />
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Thêm phòng</Button>
+      <Flex className="view-actions room-view-actions" justify="flex-end" align="center" gap={12} wrap>
+        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Thêm phòng</Button>}
       </Flex>
 
       {loading ? <Skeleton active paragraph={{ rows: 7 }} /> : !rooms.length ? (
-        <Card className="section-card"><Empty description="Chưa có phòng nào"><Button type="primary" onClick={openCreate}>Thêm phòng đầu tiên</Button></Empty></Card>
-      ) : display === "Danh sách" ? (
-        <Row gutter={[16, 16]}>
-          {rooms.map((room) => <Col xs={24} md={12} xl={8} key={room.id}><RoomCard room={room} onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} /></Col>)}
-        </Row>
+        <Card className="section-card"><Empty description="Chưa có phòng nào">{canManage && <Button type="primary" onClick={openCreate}>Thêm phòng đầu tiên</Button>}</Empty></Card>
       ) : (
         <div className="floor-board">
           {floors.map((floor) => (
             <section className="floor-line" key={floor}>
               <div className="floor-number"><Typography.Text>TẦNG</Typography.Text><strong>{floor}</strong></div>
-              <div className="floor-rooms">{rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.id} room={room} compact onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} />)}</div>
+              <div className="floor-rooms">{rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.id} room={room} compact canManage={canManage} onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} />)}</div>
             </section>
           ))}
         </div>
       )}
 
-      <Modal title={editingRoom ? `Chỉnh sửa ${editingRoom.code}` : "Thêm phòng mới"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
+      <Modal title={editingRoom ? `Chỉnh sửa ${editingRoom.code}` : "Thêm phòng mới"} open={canManage && modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
         <Form form={form} layout="vertical" onFinish={saveRoom}>
           <Row gutter={12}>
-            <Col span={12}><Form.Item name="code" label="Mã phòng" rules={[{ required: true }]}><Input placeholder="P.101" /></Form.Item></Col>
-            <Col span={12}><Form.Item name="floor" label="Tầng" rules={[{ required: true }]}><Input type="number" min={1} /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="code" label="Mã phòng" rules={[{ required: true }]}><Input placeholder="P.101" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="floor" label="Tầng" rules={[{ required: true }]}><Input type="number" min={1} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}><Form.Item name="room_type" label="Loại phòng" rules={[{ required: true }]}><Input placeholder="Phòng tiêu chuẩn" /></Form.Item></Col>
-            <Col span={12}><Form.Item name="coefficient" label="Hệ số" rules={[{ required: true }]}><Input inputMode="decimal" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="room_type" label="Loại phòng" rules={[{ required: true }]}><Input placeholder="Phòng tiêu chuẩn" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="coefficient" label="Hệ số" rules={[{ required: true }]}><Input inputMode="decimal" /></Form.Item></Col>
           </Row>
           <Form.Item name="status" label="Trạng thái" rules={[{ required: true }]}>
             <Select options={[{ value: "vacant", label: "Trống" }, { value: "occupied", label: "Đang ở" }, { value: "leaving", label: "Sắp trống" }, { value: "maintenance", label: "Bảo trì" }]} />
           </Form.Item>
           <Form.Item name="member_ids" label="Thành viên đang ở" extra="Tạo hồ sơ trước tại mục Quản lý thành viên">
-            <Select mode="multiple" allowClear optionFilterProp="label" placeholder="Chọn thành viên" options={users.map((user) => ({ value: user.user_id, label: user.full_name }))} />
+            <Select mode="multiple" allowClear optionFilterProp="label" placeholder="Chọn thành viên" options={chargeableMembers(users).map((user) => ({ value: user.user_id, label: user.full_name }))} />
           </Form.Item>
           <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" normalize={(value) => formatMoneyInput(String(value ?? ""))} rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingRoom ? "Lưu thay đổi" : "Thêm phòng"}</Button>
@@ -302,7 +304,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users }: Share
   );
 }
 
-function RoomCard({ room, compact = false, onEdit, onDelete }: { room: RentalRoom; compact?: boolean; onEdit: () => void; onDelete: () => void }) {
+function RoomCard({ room, compact = false, canManage = false, onEdit, onDelete }: { room: RentalRoom; compact?: boolean; canManage?: boolean; onEdit: () => void; onDelete: () => void }) {
   const statusMap = { vacant: ["Trống", "default"], occupied: ["Đang ở", "success"], leaving: ["Sắp trống", "warning"], maintenance: ["Bảo trì", "purple"] } as const;
   const [statusLabel, statusColor] = statusMap[room.status];
   return (
@@ -311,12 +313,12 @@ function RoomCard({ room, compact = false, onEdit, onDelete }: { room: RentalRoo
         <Tag color="gold">Tầng {room.floor}</Tag>
         <Space size={2}>
           <Tag color={statusColor}>{statusLabel}</Tag>
-          <Tooltip title="Chỉnh sửa phòng">
+          {canManage && <Tooltip title="Chỉnh sửa phòng">
             <Button className="room-action-button" type="text" icon={<EditOutlined />} onClick={onEdit} aria-label={`Chỉnh sửa ${room.code}`}>Sửa</Button>
-          </Tooltip>
-          <Popconfirm title="Xóa phòng này?" description="Dữ liệu không thể khôi phục." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={onDelete}>
+          </Tooltip>}
+          {canManage && <Popconfirm title="Xóa phòng này?" description="Dữ liệu không thể khôi phục." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} onConfirm={onDelete}>
             <Tooltip title="Xóa phòng"><Button className="room-action-button room-delete-button" type="text" icon={<DeleteOutlined />} aria-label={`Xóa ${room.code}`} /></Tooltip>
-          </Popconfirm>
+          </Popconfirm>}
         </Space>
       </Flex>
       <Flex className="room-title-line" justify="space-between" align="end">
@@ -343,6 +345,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ExpenseFormValues>();
+  const screens = Grid.useBreakpoint();
   const selectedParticipants = Form.useWatch("participant_ids", form) ?? [];
   const expenseUsers = useMemo(() => chargeableMembers(users), [users]);
   const userMap = useMemo(() => new Map(expenseUsers.map((user) => [user.user_id, user])), [expenseUsers]);
@@ -382,7 +385,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
 
   function openCreate() {
     if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
-    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể thêm chi phí.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã đóng nên không thể thêm chi phí.");
     const currentUser = expenseUsers.find((user) => user.email === currentUserEmail) ?? expenseUsers[0];
     const defaultExpenseDate = dayjs(periodStart).isSame(dayjs(), "month") ? dayjs() : dayjs(periodStart);
     setEditingExpense(null);
@@ -409,7 +412,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     const amount = parseMoney(values.amount);
     if (!amount || !values.participant_ids.length) return onNotice("Nhập số tiền và chọn ít nhất một thành viên.");
     if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
-    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể chỉnh sửa chi phí.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã đóng nên không thể chỉnh sửa chi phí.");
     setSaving(true);
     const { error } = await createClient().rpc("save_household_expense", {
       target_expense_id: editingExpense?.id ?? null,
@@ -457,22 +460,51 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
     { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} disabled={financialPeriod?.status === "closed"} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={financialPeriod?.status === "closed"} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} disabled={financialPeriod?.status === "closed"} /></Popconfirm></Space> },
   ];
 
+  function expenseActions(expense: ExpenseRecord, withLabels = false) {
+    const disabled = financialPeriod?.status === "closed";
+    return <Space size={4} className="expense-mobile-actions">
+      <Button type="text" icon={<EditOutlined />} disabled={disabled} onClick={() => openEdit(expense)}>{withLabels ? "Sửa" : null}</Button>
+      <Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={disabled} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} disabled={disabled}>{withLabels ? "Xóa" : null}</Button></Popconfirm>
+    </Space>;
+  }
+
   return (
     <div className="page-stack">
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
-      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Dữ liệu đang ở chế độ chỉ đọc.`} />}
+      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã đóng. Dữ liệu đang ở chế độ chỉ đọc.`} />}
       <ViewSummary items={[
         { label: "Tổng chi phí", value: vnd.format(total), note: `${expenses.length} khoản`, icon: <WalletOutlined />, tone: "neutral" },
         { label: "Đã hoàn thành", value: vnd.format(completedTotal), note: `${expenses.filter((item) => item.status === "completed").length} khoản`, icon: <CheckCircleFilled />, tone: "green" },
         { label: "Chờ xử lý", value: vnd.format(total - completedTotal), note: `${expenses.filter((item) => item.status === "pending").length} khoản`, icon: <InfoCircleOutlined />, tone: "orange" },
         { label: "Thành viên", value: `${expenseUsers.length} người`, note: "Tham gia", icon: <TeamOutlined />, tone: "neutral" },
       ]} />
-      <Card className="section-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Tổng hợp chi phí trong kỳ {financialPeriodShortLabel(periodStart)}</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length || !financialPeriod || financialPeriod.status === "closed"}>Thêm chi phí</Button>}>
+      <Card className="section-card expense-management-card" title={<div><span>Chi phí sinh hoạt</span><Typography.Text type="secondary" className="card-title-note">Tổng hợp chi phí trong kỳ {financialPeriodShortLabel(periodStart)}</Typography.Text></div>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!expenseUsers.length || !financialPeriod || financialPeriod.status === "closed"}>Thêm chi phí</Button>}>
         <Flex className="table-toolbar" gap={10} wrap>
           <Input allowClear prefix={<SearchOutlined />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm khoản chi..." className="table-search" />
           <Select className="status-filter" value={statusFilter} onChange={(value) => setStatusFilter(value as typeof statusFilter)} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "completed", label: "Hoàn thành" }, { value: "pending", label: "Chờ xử lý" }]} />
         </Flex>
-        <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={4} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={4} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} colSpan={2} /></Table.Summary.Row> : null} />
+        {screens.md === false ? (
+          loading ? <Skeleton active paragraph={{ rows: 7 }} /> : filtered.length ? <div className="expense-mobile-list">
+            {filtered.map((expense) => {
+              const participantNames = expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter((name): name is string => Boolean(name));
+              return <Card size="small" className="expense-mobile-card" key={expense.id}>
+                <Flex justify="space-between" align="start" gap={10}>
+                  <div className="expense-mobile-heading"><Typography.Text type="secondary">{dayjs(expense.expense_date).format("DD/MM/YYYY")}</Typography.Text><Typography.Text strong>{expense.category}</Typography.Text></div>
+                  <Tag color={expense.status === "completed" ? "success" : "warning"}>{expense.status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag>
+                </Flex>
+                <div className="expense-mobile-amount"><Typography.Text type="secondary">Tổng chi</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></div>
+                <div className="expense-mobile-details">
+                  <span><Typography.Text type="secondary">Người thanh toán</Typography.Text><Typography.Text>{userMap.get(expense.payer_member_id ?? "")?.full_name ?? "—"}</Typography.Text></span>
+                  <span><Typography.Text type="secondary">Mã tham chiếu</Typography.Text><Typography.Text>{expense.reference_code || "—"}</Typography.Text></span>
+                  <span className="expense-mobile-participants"><Typography.Text type="secondary">Người tham gia ({participantNames.length})</Typography.Text><Flex gap={4} wrap>{participantNames.length ? participantNames.map((name) => <Tag key={name}>{name}</Tag>) : <Typography.Text>—</Typography.Text>}</Flex></span>
+                  {expense.note && <span className="expense-mobile-note"><Typography.Text type="secondary">Ghi chú</Typography.Text><Typography.Text>{expense.note}</Typography.Text></span>}
+                </div>
+                {expenseActions(expense, true)}
+              </Card>;
+            })}
+            <Flex className="expense-mobile-total" justify="space-between"><Typography.Text>Tổng theo bộ lọc</Typography.Text><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Flex>
+          </div> : <Empty description="Chưa có khoản chi nào" />
+        ) : <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={4} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={4} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} colSpan={2} /></Table.Summary.Row> : null} />}
       </Card>
 
       <Modal title={editingExpense ? "Chỉnh sửa chi phí" : "Thêm chi phí"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={680} forceRender>
@@ -534,11 +566,15 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
   return { people, expenses, loading, reload: load };
 }
 
-export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr, currentMemberId, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr: boolean; currentMemberId: string | null }) {
+export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr = false, canManageSettlements = false, currentMemberId, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr?: boolean; canManageSettlements?: boolean; currentMemberId: string | null }) {
   const [filter, setFilter] = useState<"Tất cả" | "Chưa đóng" | "Đã đóng">("Tất cả");
+  const screens = Grid.useBreakpoint();
   const [qrOpen, setQrOpen] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrFileName, setQrFileName] = useState<string | null>(null);
+  const [qrAccountName, setQrAccountName] = useState("");
+  const [qrBankAccount, setQrBankAccount] = useState("");
+  const [qrBankName, setQrBankName] = useState("");
   const [qrLoading, setQrLoading] = useState(true);
   const [qrSaving, setQrSaving] = useState(false);
   const [qrError, setQrError] = useState("");
@@ -560,17 +596,23 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     setQrError("");
     const { data, error } = await createClient()
       .from("payment_qr_settings")
-      .select("qr_image_data, file_name")
+      .select("qr_image_data, file_name, account_name, bank_account, bank_name")
       .eq("property_id", propertyId)
       .maybeSingle();
     if (error) {
       setQrImage(null);
       setQrFileName(null);
-      setQrError("Không tải được mã QR. Quản trị viên cần chạy migration 0011_payment_qr_settings.sql.");
+      setQrAccountName("");
+      setQrBankAccount("");
+      setQrBankName("");
+      setQrError("Không tải được mã QR. Quản trị viên cần chạy migration 0017_payment_qr_information.sql.");
     } else {
       const setting = data as PaymentQrSetting | null;
       setQrImage(setting?.qr_image_data ?? null);
       setQrFileName(setting?.file_name ?? null);
+      setQrAccountName(setting?.account_name ?? "");
+      setQrBankAccount(setting?.bank_account ?? "");
+      setQrBankName(setting?.bank_name ?? "");
     }
     setQrLoading(false);
   }, [propertyId]);
@@ -603,7 +645,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
         updated_at: new Date().toISOString(),
       }, { onConflict: "property_id" });
       if (error) {
-        setQrError("Không thể lưu ảnh QR. Hãy kiểm tra migration 0011 và quyền quản trị viên.");
+        setQrError("Không thể lưu ảnh QR. Hãy kiểm tra migration 0017 và quyền quản trị viên.");
         onNotice("Không thể lưu ảnh mã QR.");
         return;
       }
@@ -624,7 +666,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
       return;
     }
     setQrSaving(true);
-    const { error } = await createClient().from("payment_qr_settings").delete().eq("property_id", propertyId);
+    const { error } = await createClient().from("payment_qr_settings").update({ qr_image_data: null, file_name: null, updated_at: new Date().toISOString() }).eq("property_id", propertyId);
     setQrSaving(false);
     if (error) {
       onNotice("Không thể xóa mã QR.");
@@ -646,15 +688,28 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     link.remove();
   }
 
+  async function copyQrValue(value: string, label: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      onNotice(`Đã sao chép ${label}.`);
+    } catch {
+      onNotice(`Không thể sao chép ${label}.`);
+    }
+  }
+
   async function togglePaid(person: PersonCost, paid: boolean) {
-    if (!currentMemberId || person.user_id !== currentMemberId) return onNotice("Bạn chỉ có thể xác nhận thanh toán cho chính mình.");
+    const isOwnSettlement = Boolean(currentMemberId) && person.user_id === currentMemberId;
+    if (!canManageSettlements && !isOwnSettlement) return onNotice("Bạn chỉ có thể xác nhận thanh toán cho chính mình.");
     if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
-    if (financialPeriod.status === "closed") return onNotice("Kỳ đã chốt nên không thể cập nhật thanh toán.");
+    if (financialPeriod.status === "closed") return onNotice("Kỳ đã đóng nên không thể cập nhật thanh toán.");
     const supabase = createClient();
     const { error } = await supabase.from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: periodStart, financial_period_id: financialPeriod.id, is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
     await supabase.rpc("mark_financial_period_dirty", { target_period_id: financialPeriod.id });
-    onNotice(paid ? `Đã xác nhận bạn thanh toán ${vnd.format(Math.max(person.balance, 0))}.` : "Đã chuyển trạng thái của bạn về chưa thanh toán.");
+    onNotice(canManageSettlements
+      ? (paid ? `Đã xác nhận ${person.full_name} đã đóng.` : `Đã chuyển ${person.full_name} về trạng thái chưa đóng.`)
+      : (paid ? `Đã xác nhận bạn thanh toán ${vnd.format(Math.max(person.balance, 0))}.` : "Đã chuyển trạng thái của bạn về chưa thanh toán."));
     if (paid) {
       setCelebrating(false);
       window.setTimeout(() => setCelebrating(true), 20);
@@ -663,32 +718,45 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     await reload();
   }
 
+  function settlementControl(person: PersonCost) {
+    const isOwnRow = person.user_id === currentMemberId;
+    const canToggle = canManageSettlements || isOwnRow;
+    return <div className={canToggle ? "own-settlement" : "locked-settlement"} title={canManageSettlements ? `Cập nhật trạng thái của ${person.full_name}` : isOwnRow ? "Xác nhận trạng thái thanh toán của bạn" : "Chỉ thành viên này hoặc quản trị viên mới được xác nhận"}><Checkbox checked={person.paid} disabled={!canToggle || !financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={person.paid ? "success" : "warning"}>{person.paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox></div>;
+  }
+
   const columns: TableColumnsType<PersonCost> = [
     { title: "Thành viên", dataIndex: "full_name", width: 180, fixed: "left", render: (name: string) => <Space><Avatar>{name.slice(0, 1).toUpperCase()}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "Phần chi phí", dataIndex: "allocated", width: 145, responsive: ["md"], render: (amount: number) => vnd.format(amount) },
     { title: "Đã ứng", dataIndex: "advanced", width: 145, responsive: ["md"], render: (amount: number) => vnd.format(amount) },
     { title: "Đối soát", dataIndex: "balance", width: 185, responsive: ["md"], render: (balance: number) => <div className="balance-cell"><Typography.Text type="secondary" className="cell-subtext">{balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(balance))}</Typography.Text></div> },
     { title: "STK - Ngân hàng", width: 190, responsive: ["md"], render: (_, person) => <div><Typography.Text strong>{person.bank_account || "—"}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{person.bank_name || "Chưa cập nhật"}</Typography.Text></div> },
-    { title: "Đã đóng", dataIndex: "paid", width: 165, render: (paid: boolean, person) => {
-      const isOwnRow = person.user_id === currentMemberId;
-      return <div className={isOwnRow ? "own-settlement" : "locked-settlement"} title={isOwnRow ? "Xác nhận trạng thái thanh toán của bạn" : "Chỉ thành viên này mới được xác nhận"}><Checkbox checked={paid} disabled={!isOwnRow || !financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={paid ? "success" : "warning"}>{paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox></div>;
-    } },
+    { title: "Đã đóng", dataIndex: "paid", width: 165, render: (_, person) => settlementControl(person) },
   ];
 
   return (
     <div className="page-stack">
       {celebrating && <div className="confetti-layer" aria-hidden="true">{Array.from({ length: 42 }, (_, index) => <i key={index} style={{ "--confetti-x": `${(index * 47) % 100}vw`, "--confetti-drift": `${((index * 31) % 180) - 90}px`, "--confetti-delay": `${(index % 9) * 0.055}s`, "--confetti-rotate": `${(index * 73) % 360}deg`, "--confetti-color": ["#087a58", "#f5b942", "#e85d75", "#4f8ee8", "#8f63d8"][index % 5] } as CSSProperties} />)}</div>}
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
-      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã chốt. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
-      <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" styles={{ indicator: { color: "#ffffff" } }} /><span>đã thanh toán</span></div></Col></Row></Card>
+      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã đóng. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
+      <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={screens.md === false ? 68 : 90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" styles={{ indicator: { color: "#ffffff" } }} /><span>Đã hoàn thành</span></div></Col></Row></Card>
       <ViewSummary items={[
         { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined />, tone: "neutral" },
         { label: "Thành viên", value: `${people.length} người`, note: "Tham gia đối soát", icon: <TeamOutlined />, tone: "neutral" },
         { label: "Chưa thanh toán", value: `${unpaid.length} người`, note: vnd.format(unpaidTotal), icon: <InfoCircleOutlined />, tone: "orange" },
         { label: "Người nhận hoàn", value: receiver && receiver.balance < 0 ? receiver.full_name : "—", note: receiver && receiver.balance < 0 ? vnd.format(Math.abs(receiver.balance)) : "Không có", icon: <BankOutlined />, tone: "green" },
       ]} />
-      <Card className="section-card" title={<div><span>Đối soát thành viên</span><Typography.Text type="secondary" className="card-title-note">Mỗi thành viên chỉ xác nhận được trạng thái thanh toán của chính mình</Typography.Text></div>} extra={<Space wrap className="people-cost-actions"><Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>Mã QR</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}>
-        <Table className="people-cost-table" rowKey="user_id" loading={loading} columns={columns} dataSource={visible} pagination={false} scroll={{ x: "max-content" }} locale={{ emptyText: <Empty description="Chưa có dữ liệu đối soát" /> }} />
+      <Card className="section-card people-cost-management-card" title={<div><span>Đối soát thành viên</span><Typography.Text type="secondary" className="card-title-note">{canManageSettlements ? "Quản trị viên có thể cập nhật trạng thái đã đóng cho mọi thành viên" : "Mỗi thành viên chỉ xác nhận được trạng thái thanh toán của chính mình"}</Typography.Text></div>} extra={<Space wrap className="people-cost-actions"><Button icon={<QrcodeOutlined />} onClick={() => setQrOpen(true)}>Mã QR</Button><Segmented value={filter} options={["Tất cả", "Chưa đóng", "Đã đóng"]} onChange={(value) => setFilter(value as typeof filter)} /></Space>}>
+        {screens.md === false ? (
+          loading ? <Skeleton active paragraph={{ rows: 8 }} /> : visible.length ? <div className="people-cost-mobile-list">{visible.map((person) => <Card size="small" className="people-cost-mobile-card" key={person.user_id}>
+            <Flex justify="space-between" align="center" gap={10}><Space><Avatar>{person.full_name.slice(0, 1).toUpperCase()}</Avatar><Typography.Text strong>{person.full_name}</Typography.Text></Space>{settlementControl(person)}</Flex>
+            <div className="people-cost-mobile-money">
+              <span><Typography.Text type="secondary">Phần chi phí</Typography.Text><Typography.Text strong>{vnd.format(person.allocated)}</Typography.Text></span>
+              <span><Typography.Text type="secondary">Đã ứng</Typography.Text><Typography.Text strong>{vnd.format(person.advanced)}</Typography.Text></span>
+              <span className="people-cost-mobile-balance"><Typography.Text type="secondary">{person.balance < 0 ? "Được nhận lại" : "Cần đóng"}</Typography.Text><Typography.Text strong type={person.balance < 0 ? "success" : "danger"}>{vnd.format(Math.abs(person.balance))}</Typography.Text></span>
+            </div>
+            <div className="people-cost-mobile-bank"><BankOutlined /><span><Typography.Text strong>{person.bank_account || "Chưa cập nhật số tài khoản"}</Typography.Text><Typography.Text type="secondary">{person.bank_name || "Chưa cập nhật ngân hàng"}</Typography.Text></span></div>
+          </Card>)}</div> : <Empty description="Chưa có dữ liệu đối soát" />
+        ) : <Table className="people-cost-table" rowKey="user_id" loading={loading} columns={columns} dataSource={visible} pagination={false} scroll={{ x: "max-content" }} locale={{ emptyText: <Empty description="Chưa có dữ liệu đối soát" /> }} />}
       </Card>
 
       <Modal
@@ -706,6 +774,13 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
               <div className="payment-qr-frame"><Image src={qrImage} alt="Mã QR thanh toán" preview /></div>
             </>
           ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={canManageQr ? "Chưa có mã QR. Hãy tải ảnh QR lên." : "Quản trị viên chưa cập nhật mã QR."} />}
+
+          {(qrAccountName || qrBankAccount || qrBankName) && <div className="qr-payment-info">
+            <Typography.Text type="secondary">Thông tin nhận thanh toán</Typography.Text>
+            {qrAccountName && <Typography.Text strong>{qrAccountName}</Typography.Text>}
+            {(qrBankName || qrBankAccount) && <Typography.Text>{[qrBankName, qrBankAccount].filter(Boolean).join(" · ")}</Typography.Text>}
+            {qrBankAccount && <Button size="small" icon={<CopyOutlined />} onClick={() => void copyQrValue(qrBankAccount, "số tài khoản")}>Sao chép STK</Button>}
+          </div>}
 
           {qrError && <Alert type="error" showIcon title={qrError} />}
 
@@ -737,6 +812,128 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   );
 }
 
+export function PaymentQrManagement({ organizationId, propertyId, onNotice }: SharedProps) {
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrFileName, setQrFileName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [form] = Form.useForm<PaymentQrFormValues>();
+
+  const loadQr = useCallback(async () => {
+    if (!propertyId) return;
+    setLoading(true);
+    setError("");
+    const { data, error: loadError } = await createClient().from("payment_qr_settings")
+      .select("qr_image_data, file_name, account_name, bank_account, bank_name")
+      .eq("property_id", propertyId)
+      .maybeSingle();
+    if (loadError) {
+      setError("Không tải được mã QR thanh toán. Hãy kiểm tra migration 0017.");
+      setQrImage(null);
+      setQrFileName(null);
+      form.resetFields();
+    } else {
+      const setting = data as PaymentQrSetting | null;
+      setQrImage(setting?.qr_image_data ?? null);
+      setQrFileName(setting?.file_name ?? null);
+      form.setFieldsValue({ account_name: setting?.account_name ?? "", bank_account: setting?.bank_account ?? "", bank_name: setting?.bank_name ?? "" });
+    }
+    setLoading(false);
+  }, [form, propertyId]);
+
+  useEffect(() => { void loadQr(); }, [loadQr]);
+
+  async function saveQr(file: File) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return onNotice("Chỉ hỗ trợ ảnh QR định dạng PNG, JPG hoặc WebP.");
+    if (file.size > 1.5 * 1024 * 1024) return onNotice("Ảnh QR tối đa 1,5 MB. Hãy chọn ảnh nhỏ hơn.");
+    setSaving(true);
+    try {
+      const imageData = await fileToDataUrl(file);
+      const values = form.getFieldsValue();
+      const { error: saveError } = await createClient().from("payment_qr_settings").upsert({
+        property_id: propertyId,
+        organization_id: organizationId,
+        qr_image_data: imageData,
+        file_name: file.name.slice(0, 160),
+        account_name: values.account_name?.trim() || null,
+        bank_account: values.bank_account?.trim() || null,
+        bank_name: values.bank_name?.trim() || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "property_id" });
+      if (saveError) throw saveError;
+      setQrImage(imageData);
+      setQrFileName(file.name);
+      setError("");
+      onNotice("Đã cập nhật mã QR thanh toán.");
+    } catch {
+      setError("Không thể lưu ảnh QR. Hãy kiểm tra quyền quản trị viên và migration 0017.");
+      onNotice("Không thể lưu ảnh mã QR.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeQr() {
+    setSaving(true);
+    const { error: removeError } = await createClient().from("payment_qr_settings").update({ qr_image_data: null, file_name: null, updated_at: new Date().toISOString() }).eq("property_id", propertyId);
+    setSaving(false);
+    if (removeError) return onNotice("Không thể xóa mã QR.");
+    setQrImage(null);
+    setQrFileName(null);
+    setError("");
+    onNotice("Đã xóa mã QR thanh toán.");
+  }
+
+  async function saveQrInformation(values: PaymentQrFormValues) {
+    setSaving(true);
+    const { error: saveError } = await createClient().from("payment_qr_settings").upsert({
+      property_id: propertyId,
+      organization_id: organizationId,
+      qr_image_data: qrImage,
+      file_name: qrFileName,
+      account_name: values.account_name?.trim() || null,
+      bank_account: values.bank_account?.trim() || null,
+      bank_name: values.bank_name?.trim() || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "property_id" });
+    setSaving(false);
+    if (saveError) {
+      setError("Không thể lưu thông tin mã QR. Hãy kiểm tra migration 0017.");
+      return onNotice("Không thể lưu thông tin mã QR.");
+    }
+    setError("");
+    onNotice("Đã cập nhật thông tin mã QR thanh toán.");
+  }
+
+  return (
+    <Card className="section-card admin-hub-card" title={<div><span>Quản lý mã QR thanh toán</span><Typography.Text type="secondary" className="card-title-note">Ảnh này được hiển thị cho thành viên khi thanh toán và đối soát</Typography.Text></div>}>
+      {error && <Alert type="error" showIcon title={error} />}
+      <div className="admin-qr-management">
+        {loading ? <Skeleton.Image active className="payment-qr-skeleton" /> : qrImage ? <div className="payment-qr-frame"><Image src={qrImage} alt="Mã QR thanh toán" preview /></div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có mã QR thanh toán" />}
+        <div className="admin-qr-copy">
+          <input ref={inputRef} className="visually-hidden-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void saveQr(file); event.currentTarget.value = ""; }} />
+          <Space wrap className="admin-qr-actions">
+            <Button type="primary" icon={<UploadOutlined />} loading={saving} onClick={() => inputRef.current?.click()}>{qrImage ? "Thay ảnh QR" : "Tải ảnh QR lên"}</Button>
+            {qrImage && <Popconfirm title="Xóa mã QR hiện tại?" okText="Xóa" cancelText="Hủy" onConfirm={() => void removeQr()}><Button danger icon={<DeleteOutlined />} loading={saving}>Xóa ảnh</Button></Popconfirm>}
+          </Space>
+          <Form form={form} layout="vertical" className="admin-qr-info" onFinish={(values) => void saveQrInformation(values)}>
+            <Typography.Title level={4}>Thông tin nhận thanh toán</Typography.Title>
+            <Form.Item name="account_name" label="Tên chủ tài khoản"><Input maxLength={160} placeholder="Ví dụ: NGUYEN VAN A" /></Form.Item>
+            <Row gutter={12}>
+              <Col xs={24} sm={12}><Form.Item name="bank_account" label="Số tài khoản"><Input inputMode="numeric" maxLength={80} /></Form.Item></Col>
+              <Col xs={24} sm={12}><Form.Item name="bank_name" label="Ngân hàng"><Input maxLength={120} placeholder="Ví dụ: Vietcombank" /></Form.Item></Col>
+            </Row>
+            <Button type="primary" htmlType="submit" loading={saving}>Lưu thông tin QR</Button>
+          </Form>
+          <Typography.Text type="secondary" className="admin-qr-hint">Ảnh hỗ trợ PNG, JPG hoặc WebP, tối đa 1,5 MB.</Typography.Text>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function ReportView({ organizationId, propertyId, users, financialPeriod, periodStart }: { organizationId: string; propertyId: string; users: OrganizationUser[] } & PeriodProps) {
   const { people, expenses, loading } = usePeopleCosts(organizationId, propertyId, users, financialPeriod);
   const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -744,12 +941,9 @@ export function ReportView({ organizationId, propertyId, users, financialPeriod,
   const outstanding = people.filter((person) => !person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
   const collectibleTotal = collected + outstanding;
   const collectionRate = collectibleTotal ? Math.round(collected / collectibleTotal * 100) : 0;
-  const largest = [...expenses].sort((a, b) => b.amount - a.amount)[0];
-  const topPayer = [...people].sort((a, b) => b.advanced - a.advanced)[0];
-
   if (loading) return <Skeleton active paragraph={{ rows: 10 }} />;
   return (
-    <div className="page-stack">
+    <div className="page-stack report-page">
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
       <ViewSummary items={[
         { label: "Tổng chi kỳ này", value: vnd.format(total), note: financialPeriodShortLabel(periodStart), icon: <WalletOutlined />, tone: "neutral" },
@@ -758,8 +952,7 @@ export function ReportView({ organizationId, propertyId, users, financialPeriod,
         { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined />, tone: outstanding > 0 ? "orange" : "green" },
       ]} />
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={14}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div className="collection-progress"><Flex justify="space-between" gap={16} wrap><div><Typography.Text strong>Đã thu {vnd.format(collected)}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">Trên tổng cần thu {vnd.format(collectibleTotal)}</Typography.Text></div><Typography.Text strong className="collection-rate">{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} showInfo={false} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
-        <Col xs={24} lg={10}><Card title={`Tóm tắt kỳ ${financialPeriodShortLabel(periodStart)}`} className="section-card"><Descriptions column={1} bordered><Descriptions.Item label="Khoản chi lớn nhất">{largest?.category ?? "—"}</Descriptions.Item><Descriptions.Item label="Người ứng nhiều nhất">{topPayer?.advanced ? topPayer.full_name : "—"}</Descriptions.Item><Descriptions.Item label="Số người đã đóng">{people.filter((person) => person.paid).length}/{people.length}</Descriptions.Item><Descriptions.Item label="Trạng thái"><Tag color={outstanding > 0 ? "warning" : "success"}>{outstanding > 0 ? "Còn tồn đọng" : "Đã hoàn tất"}</Tag></Descriptions.Item></Descriptions></Card></Col>
+        <Col xs={24}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div className="collection-progress"><Flex justify="space-between" gap={16} wrap><div><Typography.Text strong>Đã thu {vnd.format(collected)}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">Trên tổng cần thu {vnd.format(collectibleTotal)}</Typography.Text></div><Typography.Text strong className="collection-rate">{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} showInfo={false} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
       </Row>
     </div>
   );
@@ -776,6 +969,8 @@ export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { 
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<MemberFormValues>();
   const [linkForm] = Form.useForm<LinkFormValues>();
+  const screens = Grid.useBreakpoint();
+  const managedUsers = useMemo(() => chargeableMembers(users), [users]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -848,24 +1043,42 @@ export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { 
     { title: "Thao tác", width: 180, render: (_, user) => { const isCurrentUser = user.email === currentUserEmail; return <Space size={2}><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(user)} />{user.is_linked ? <Popconfirm title="Bỏ liên kết tài khoản?" description="Dữ liệu thành viên vẫn được giữ nguyên." okText="Bỏ liên kết" cancelText="Hủy" disabled={isCurrentUser} onConfirm={() => void unlinkAccount(user)}><Button type="text" disabled={isCurrentUser} icon={<DisconnectOutlined />} /></Popconfirm> : <Button type="text" icon={<LinkOutlined />} onClick={() => openLink(user)}>Gán</Button>}<Popconfirm title="Ngừng sử dụng thành viên?" description="Hồ sơ sẽ ẩn nhưng lịch sử chi phí vẫn được giữ." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={isCurrentUser} onConfirm={() => void deleteMember(user)}><Button type="text" danger disabled={isCurrentUser} icon={<DeleteOutlined />} /></Popconfirm></Space>; } },
   ];
 
+  function memberActions(user: OrganizationUser, withLabels = false) {
+    const isCurrentUser = user.email === currentUserEmail;
+    return <Space size={4} wrap className="member-actions">
+      <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(user)}>{withLabels ? "Sửa" : null}</Button>
+      {user.is_linked
+        ? <Popconfirm title="Bỏ liên kết tài khoản?" description="Dữ liệu thành viên vẫn được giữ nguyên." okText="Bỏ liên kết" cancelText="Hủy" disabled={isCurrentUser} onConfirm={() => void unlinkAccount(user)}><Button type="text" disabled={isCurrentUser} icon={<DisconnectOutlined />}>{withLabels ? "Bỏ liên kết" : null}</Button></Popconfirm>
+        : <Button type="text" icon={<LinkOutlined />} onClick={() => openLink(user)}>{withLabels ? "Gán" : "Gán"}</Button>}
+      <Popconfirm title="Ngừng sử dụng thành viên?" description="Hồ sơ sẽ ẩn nhưng lịch sử chi phí vẫn được giữ." okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={isCurrentUser} onConfirm={() => void deleteMember(user)}><Button type="text" danger disabled={isCurrentUser} icon={<DeleteOutlined />}>{withLabels ? "Xóa" : null}</Button></Popconfirm>
+    </Space>;
+  }
+
   return (
     <div className="page-stack">
       <ViewSummary items={[
-        { label: "Tổng thành viên", value: `${users.length} người`, note: "Có thể xếp phòng và chia phí", icon: <TeamOutlined /> },
-        { label: "Đã liên kết", value: `${users.filter((user) => user.is_linked).length} người`, note: "Có tài khoản đăng nhập", icon: <LinkOutlined /> },
-        { label: "Chờ liên kết", value: `${users.filter((user) => !user.is_linked).length} người`, note: "Đã dùng được trong nghiệp vụ", icon: <Avatar size={20}>M</Avatar> },
-        { label: "Đã cập nhật ngân hàng", value: `${users.filter((user) => user.bank_account).length} người`, note: "Phục vụ đối soát", icon: <BankOutlined /> },
+        { label: "Tổng thành viên", value: `${managedUsers.length} người`, note: "Có thể xếp phòng và chia phí", icon: <TeamOutlined /> },
+        { label: "Đã liên kết", value: `${managedUsers.filter((user) => user.is_linked).length} người`, note: "Có tài khoản đăng nhập", icon: <LinkOutlined /> },
+        { label: "Chờ liên kết", value: `${managedUsers.filter((user) => !user.is_linked).length} người`, note: "Đã dùng được trong nghiệp vụ", icon: <Avatar size={20}>M</Avatar> },
+        { label: "Đã cập nhật ngân hàng", value: `${managedUsers.filter((user) => user.bank_account).length} người`, note: "Phục vụ đối soát", icon: <BankOutlined /> },
       ]} />
-      <Card className="section-card" title={<div><span>Quản lý thành viên</span><Typography.Text type="secondary" className="card-title-note">Tạo hồ sơ trước, gán tài khoản sau khi người đó đăng ký</Typography.Text></div>} extra={<Button type="primary" icon={<UserAddOutlined />} onClick={openAdd}>Thêm thành viên</Button>}>
+      <Card className="section-card member-management-card" title={<div><span>Quản lý thành viên</span><Typography.Text type="secondary" className="card-title-note">Tạo hồ sơ trước, gán tài khoản sau khi người đó đăng ký</Typography.Text></div>} extra={<Button type="primary" icon={<UserAddOutlined />} onClick={openAdd}>Thêm thành viên</Button>}>
         <Alert type="info" showIcon className="member-help" title="Thành viên chưa liên kết vẫn có thể được xếp phòng, chọn làm người thanh toán và tham gia chia chi phí." />
-        <Table rowKey="user_id" columns={columns} dataSource={users} pagination={false} scroll={{ x: 850 }} locale={{ emptyText: <Empty description="Chưa có thành viên" /> }} />
+        {screens.md === false ? <div className="member-mobile-list">{users.map((user) => <Card size="small" className="member-mobile-card" key={user.user_id}>
+          <Flex justify="space-between" align="start" gap={10}>
+            <Space align="start"><Avatar>{user.full_name.slice(0, 1).toUpperCase()}</Avatar><div><Typography.Text strong>{user.full_name}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">{user.is_linked ? user.email || "Tài khoản đã liên kết" : "Chưa liên kết tài khoản"}</Typography.Text></div></Space>
+            <Tag color={user.is_linked ? "success" : "warning"}>{user.is_linked ? (user.role === "admin" ? "Quản trị viên" : "Đã liên kết") : "Chưa liên kết"}</Tag>
+          </Flex>
+          <div className="member-mobile-details"><span><Typography.Text type="secondary">Điện thoại</Typography.Text><Typography.Text>{user.phone || "—"}</Typography.Text></span><span><Typography.Text type="secondary">Ngân hàng</Typography.Text><Typography.Text>{user.bank_account ? `${user.bank_account} · ${user.bank_name}` : "—"}</Typography.Text></span></div>
+          {memberActions(user, true)}
+        </Card>)}</div> : <Table rowKey="user_id" columns={columns} dataSource={users} pagination={false} scroll={{ x: 850 }} locale={{ emptyText: <Empty description="Chưa có thành viên" /> }} />}
       </Card>
 
       <Modal title={editingUser ? "Chỉnh sửa thành viên" : "Thêm thành viên"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} forceRender>
         <Form form={form} layout="vertical" onFinish={saveMember}>
           <Form.Item name="full_name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="phone" label="Số điện thoại"><Input /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="bank_account" label="Số tài khoản"><Input /></Form.Item></Col><Col span={12}><Form.Item name="bank_name" label="Ngân hàng"><Input /></Form.Item></Col></Row>
+          <Row gutter={12}><Col xs={24} sm={12}><Form.Item name="bank_account" label="Số tài khoản"><Input /></Form.Item></Col><Col xs={24} sm={12}><Form.Item name="bank_name" label="Ngân hàng"><Input /></Form.Item></Col></Row>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingUser ? "Lưu thay đổi" : "Thêm thành viên"}</Button>
         </Form>
       </Modal>
@@ -884,6 +1097,6 @@ export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { 
 function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode; tone?: SummaryTone }[] }) {
   return <Row gutter={[16, 16]}>{items.map((item) => {
     const tone = item.tone ?? "neutral";
-    return <Col xs={24} sm={12} xxl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${tone}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${tone}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>;
+    return <Col xs={12} sm={12} xxl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${tone}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${tone}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>;
   })}</Row>;
 }
