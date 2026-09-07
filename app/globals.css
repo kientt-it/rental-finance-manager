@@ -374,6 +374,45 @@ select {
   font-weight: 800;
 }
 
+.online-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #dce9e2;
+  border-radius: 999px;
+  background: #f7fbf9;
+  color: #466358;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.online-presence > .anticon {
+  color: #087a58;
+  font-size: 14px;
+}
+
+.online-presence-count {
+  min-width: 12px;
+  color: #173d2e;
+  text-align: center;
+}
+
+.online-presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #19a974;
+  box-shadow: 0 0 0 3px rgba(25, 169, 116, 0.12);
+}
+
+.online-presence-dot.is-loading {
+  background: #a7b8b0;
+  box-shadow: 0 0 0 3px rgba(167, 184, 176, 0.16);
+}
+
 .account-menu-trigger {
   display: inline-grid !important;
   width: 42px !important;

@@ -110,6 +110,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [selectedPeriodStart, setSelectedPeriodStart] = useState(currentPeriodStart);
   const [periodMonth, setPeriodMonth] = useState(() => dayjs(currentPeriodStart()));
   const [periodSaving, setPeriodSaving] = useState(false);
+  const [onlineUserCount, setOnlineUserCount] = useState<number | null>(null);
   const periodSelectionReady = useRef(false);
   const screens = Grid.useBreakpoint();
 
@@ -196,6 +197,42 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
 
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => { void loadFinancialPeriods(); }, [loadFinancialPeriods]);
+  useEffect(() => {
+    if (!data.organization_id) {
+      setOnlineUserCount(null);
+      return;
+    }
+
+    const supabase = createClient();
+    const channel = supabase.channel(`presence:organization:${data.organization_id}`, {
+      config: { presence: { key: userId } },
+    });
+    const updateOnlineUserCount = () => {
+      const presenceState = channel.presenceState<{ user_id?: string }>();
+      const onlineUserIds = new Set(
+        Object.values(presenceState)
+          .flat()
+          .map((presence) => presence.user_id)
+          .filter((presenceUserId): presenceUserId is string => Boolean(presenceUserId)),
+      );
+      setOnlineUserCount(onlineUserIds.size);
+    };
+
+    channel
+      .on("presence", { event: "sync" }, updateOnlineUserCount)
+      .on("presence", { event: "join" }, updateOnlineUserCount)
+      .on("presence", { event: "leave" }, updateOnlineUserCount)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ user_id: userId });
+          updateOnlineUserCount();
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [data.organization_id, userId]);
   useEffect(() => { if (screens.lg) setMobileMenuOpen(false); }, [screens.lg]);
   useEffect(() => { setActiveTab(routeTabs[pathname] ?? "Tổng quan"); }, [pathname]);
   useEffect(() => {
@@ -500,6 +537,12 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               </div>
             </Flex>
             <Space className="header-actions">
+              <div className="online-presence" title="Số người đang truy cập trong nhà này" aria-live="polite">
+                <span className={`online-presence-dot${onlineUserCount === null ? " is-loading" : ""}`} aria-hidden="true" />
+                <TeamOutlined />
+                <span className="online-presence-count">{onlineUserCount ?? "—"}</span>
+                <span className="online-presence-label">đang truy cập</span>
+              </div>
               <Button shape="circle" icon={<BellOutlined />} aria-label="Thông báo" />
               <Dropdown menu={accountMenu} trigger={["click"]} placement="bottomRight">
                 <Button type="text" shape="circle" className="account-menu-trigger" aria-label="Mở thông tin tài khoản"><Avatar src={avatarUrl || undefined} className="header-avatar">{initials}</Avatar></Button>

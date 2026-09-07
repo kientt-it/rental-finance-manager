@@ -799,6 +799,15 @@ body {
 }
 
 @media (max-width: 480px) {
+  .online-presence {
+    gap: 5px;
+    padding-inline: 8px;
+  }
+
+  .online-presence-label {
+    display: none;
+  }
+
   .support-float-group {
     right: 14px !important;
     bottom: 14px !important;
