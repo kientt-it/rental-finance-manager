@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
 import {
+  App,
   Alert,
   Avatar,
   Button,
@@ -96,7 +97,6 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [activeTab, setActiveTab] = useState(() => routeTabs[pathname] ?? "Tổng quan");
   const [data, setData] = useState<DashboardData>(emptyData);
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [organizationUsers, setOrganizationUsers] = useState<OrganizationUser[]>([]);
@@ -113,6 +113,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [onlineUserCount, setOnlineUserCount] = useState<number | null>(null);
   const periodSelectionReady = useRef(false);
   const screens = Grid.useBreakpoint();
+  const { message } = App.useApp();
+  const notify = useCallback((content: string) => {
+    message.success({ content });
+  }, [message]);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -309,7 +313,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
 
     setAccountUsername(values.username.trim());
     setProfileOpen(false);
-    setNotice(values.new_password ? "Đã cập nhật hồ sơ và mật khẩu. Lần sau bạn có thể đăng nhập bằng tên tài khoản." : "Đã cập nhật thông tin tài khoản.");
+    notify(values.new_password ? "Đã cập nhật hồ sơ và mật khẩu. Lần sau bạn có thể đăng nhập bằng tên tài khoản." : "Đã cập nhật thông tin tài khoản.");
     await loadDashboard();
     router.refresh();
   }
@@ -324,11 +328,11 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     });
     setPeriodSaving(false);
     if (createError) {
-      setNotice("Không thể tạo kỳ tài chính. Hãy kiểm tra quyền quản trị và migration 0013.");
+      notify("Không thể tạo kỳ tài chính. Hãy kiểm tra quyền quản trị và migration 0013.");
       return;
     }
     selectViewingPeriod(periodStart);
-    setNotice(`Đã tạo kỳ ${financialPeriodShortLabel(periodStart)}.`);
+    notify(`Đã tạo kỳ ${financialPeriodShortLabel(periodStart)}.`);
     await loadFinancialPeriods();
   }
 
@@ -341,10 +345,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     });
     setPeriodSaving(false);
     if (statusError) {
-      setNotice("Không thể cập nhật trạng thái kỳ.");
+      notify("Không thể cập nhật trạng thái kỳ.");
       return;
     }
-    setNotice(nextStatus === "closed" ? `Đã đóng kỳ ${financialPeriodShortLabel(period.period_start)}.` : `Đã mở lại kỳ ${financialPeriodShortLabel(period.period_start)}.`);
+    notify(nextStatus === "closed" ? `Đã đóng kỳ ${financialPeriodShortLabel(period.period_start)}.` : `Đã mở lại kỳ ${financialPeriodShortLabel(period.period_start)}.`);
     await loadFinancialPeriods();
   }
 
@@ -355,11 +359,11 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     });
     setPeriodSaving(false);
     if (defaultError) {
-      setNotice("Không thể đặt kỳ mặc định. Hãy kiểm tra migration mới nhất.");
+      notify("Không thể đặt kỳ mặc định. Hãy kiểm tra migration mới nhất.");
       return;
     }
     selectViewingPeriod(period.period_start);
-    setNotice(`Đã đặt kỳ ${financialPeriodShortLabel(period.period_start)} làm mặc định.`);
+    notify(`Đã đặt kỳ ${financialPeriodShortLabel(period.period_start)} làm mặc định.`);
     await loadFinancialPeriods();
   }
 
@@ -377,7 +381,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     ]);
     if (expenseError || settlementError) {
       setPeriodSaving(false);
-      setNotice("Không tải được dữ liệu để xuất Excel.");
+      notify("Không tải được dữ liệu để xuất Excel.");
       return;
     }
 
@@ -416,10 +420,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     const { error: markError } = await supabase.rpc("mark_financial_period_exported", { target_period_id: period.id });
     setPeriodSaving(false);
     if (markError) {
-      setNotice("Đã tải Excel nhưng chưa ghi nhận được thời điểm xuất kỳ.");
+      notify("Đã tải Excel nhưng chưa ghi nhận được thời điểm xuất kỳ.");
       return;
     }
-    setNotice(`Đã xuất Excel kỳ ${financialPeriodShortLabel(period.period_start)}.`);
+    notify(`Đã xuất Excel kỳ ${financialPeriodShortLabel(period.period_start)}.`);
     await loadFinancialPeriods();
   }
 
@@ -428,13 +432,13 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     const { error: deleteError } = await createClient().rpc("delete_financial_period", { target_period_id: period.id });
     setPeriodSaving(false);
     if (deleteError) {
-      setNotice(deleteError.message.includes("Export") ? "Cần xuất Excel trước khi xóa kỳ." : "Không thể xóa kỳ tài chính.");
+      notify(deleteError.message.includes("Export") ? "Cần xuất Excel trước khi xóa kỳ." : "Không thể xóa kỳ tài chính.");
       return;
     }
     if (selectedPeriodStart === period.period_start) {
       selectViewingPeriod(periods.find((item) => item.is_default && item.id !== period.id)?.period_start ?? currentPeriodStart());
     }
-    setNotice(`Đã xóa kỳ ${financialPeriodShortLabel(period.period_start)} và dữ liệu chi phí liên quan.`);
+    notify(`Đã xóa kỳ ${financialPeriodShortLabel(period.period_start)} và dữ liệu chi phí liên quan.`);
     await loadFinancialPeriods();
   }
 
@@ -550,7 +554,6 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
             </Space>
           </header>
 
-          {notice && <Alert className="page-alert" type="success" showIcon closable title={notice} onClose={() => setNotice("")} />}
           {error && <Alert className="page-alert" type="error" showIcon title={error} action={<Button size="small" onClick={() => void loadDashboard()}>Thử lại</Button>} />}
 
           {activeTab === "Tổng quan" && (
@@ -563,12 +566,12 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               currentRole={currentRole}
               financialPeriod={selectedPeriod}
               periodStart={selectedPeriodStart}
-              onNotice={setNotice}
+              onNotice={notify}
             />
           )}
-          {activeTab === "Phòng" && <RoomsView onNotice={setNotice} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
-          {activeTab === "Chi phí" && <ExpensesView onNotice={setNotice} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
-          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={setNotice} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} currentMemberId={currentMember?.user_id ?? null} canManageSettlements={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
+          {activeTab === "Phòng" && <RoomsView onNotice={notify} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
+          {activeTab === "Chi phí" && <ExpensesView onNotice={notify} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
+          {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={notify} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} currentMemberId={currentMember?.user_id ?? null} canManageSettlements={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Quản trị" && currentRole === "admin" && (
             <AdminManagementView
@@ -587,7 +590,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               onSetPeriodStatus={(period) => void setPeriodStatus(period)}
               onExportPeriod={(period) => void exportFinancialPeriod(period)}
               onDeletePeriod={(period) => void deleteFinancialPeriod(period)}
-              onNotice={setNotice}
+              onNotice={notify}
               onMembersChanged={() => void loadDashboard()}
             />
           )}
@@ -626,7 +629,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
         organizationId={data.organization_id}
         propertyId={data.property_id}
         canManage={false}
-        onNotice={setNotice}
+        onNotice={notify}
       />
     </Layout>
   );
