@@ -34,7 +34,6 @@ import {
 } from "antd";
 import {
   BankOutlined,
-  BellOutlined,
   CalendarOutlined,
   CreditCardOutlined,
   CopyOutlined,
@@ -521,7 +520,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
         <Layout.Content className="dashboard-content">
           <header className="page-header">
             <Flex align="center" gap={14}>
-              <Button className="mobile-menu-button" icon={<MenuOutlined />} onClick={() => setMobileMenuOpen(true)} />
+              <Button className="mobile-menu-button" icon={<MenuOutlined />} aria-label="Mở menu điều hướng" onClick={() => setMobileMenuOpen(true)} />
               <div>
                 <Flex align="center" gap={8} wrap className="period-header-row">
                   <Typography.Text className="period-label">{periodLabel}</Typography.Text>
@@ -547,7 +546,6 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
                 <span className="online-presence-count">{onlineUserCount ?? "—"}</span>
                 <span className="online-presence-label">đang truy cập</span>
               </div>
-              <Button shape="circle" icon={<BellOutlined />} aria-label="Thông báo" />
               <Dropdown menu={accountMenu} trigger={["click"]} placement="bottomRight">
                 <Button type="text" shape="circle" className="account-menu-trigger" aria-label="Mở thông tin tài khoản"><Avatar src={avatarUrl || undefined} className="header-avatar">{initials}</Avatar></Button>
               </Dropdown>
@@ -1051,7 +1049,7 @@ function SpendingBar({ label, value, percent, current = false }: { label: string
 
 function MetricCard({ loading, title, value, note, icon, tone }: { loading: boolean; title: string; value: number; note: string; icon: React.ReactNode; tone: string }) {
   return (
-    <Col xs={24} sm={12} xxl={6} className="summary-col">
+    <Col xs={24} sm={12} xl={6} className="summary-col">
       <Card className={`summary-card summary-card-${tone}`}>
         <Flex justify="space-between" align="flex-start">
           <Statistic title={title} value={loading ? 0 : value} formatter={(current) => loading ? "—" : money.format(Number(current))} />

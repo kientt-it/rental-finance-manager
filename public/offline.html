@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#087a58" />
+    <title>Mất kết nối | 708 La Thành</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; margin: 0; }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #f3f7f5;
+        color: #10271f;
+        font-family: "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif;
+      }
+      main {
+        width: min(440px, 100%);
+        padding: 32px;
+        border: 1px solid #e2e9e5;
+        border-radius: 20px;
+        background: #fff;
+        box-shadow: 0 18px 48px rgba(28, 61, 47, .09);
+        text-align: center;
+      }
+      .brand {
+        display: grid;
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 20px;
+        place-items: center;
+        border-radius: 17px;
+        background: linear-gradient(145deg, #07936a, #086748);
+        color: #fff;
+        font-size: 17px;
+        font-weight: 800;
+      }
+      h1 { margin: 0 0 10px; font-size: 26px; }
+      p { margin: 0 0 24px; color: #5f736a; font-size: 16px; line-height: 1.6; }
+      button {
+        min-height: 44px;
+        padding: 0 20px;
+        border: 0;
+        border-radius: 11px;
+        background: #087a58;
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand" aria-hidden="true">708</div>
+      <h1>Bạn đang ngoại tuyến</h1>
+      <p>Kiểm tra kết nối mạng rồi thử lại để xem dữ liệu tài chính mới nhất.</p>
+      <button type="button" onclick="location.reload()">Thử kết nối lại</button>
+    </main>
+  </body>
+</html>

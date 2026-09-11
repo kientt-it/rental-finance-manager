@@ -1097,6 +1097,6 @@ export function MembersView({ users, currentUserEmail, onNotice, onChanged }: { 
 function ViewSummary({ items }: { items: { label: string; value: string; note: string; icon: React.ReactNode; tone?: SummaryTone }[] }) {
   return <Row gutter={[16, 16]}>{items.map((item) => {
     const tone = item.tone ?? "neutral";
-    return <Col xs={12} sm={12} xxl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${tone}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${tone}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>;
+    return <Col xs={12} sm={12} xl={6} key={item.label} className="summary-col"><Card className={`summary-card summary-card-${tone}`}><Flex justify="space-between" align="flex-start"><Statistic title={item.label} value={item.value} /><span className={`metric-icon ${tone}`}>{item.icon}</span></Flex><Typography.Text type="secondary">{item.note}</Typography.Text></Card></Col>;
   })}</Row>;
 }

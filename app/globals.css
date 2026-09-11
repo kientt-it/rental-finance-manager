@@ -177,8 +177,9 @@ select {
   padding: 0 4px;
 }
 
-.admin-period-list {
+.period-manager-list.admin-period-list {
   max-height: none;
+  overflow: visible;
 }
 
 .admin-qr-management {
