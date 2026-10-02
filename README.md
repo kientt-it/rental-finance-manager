@@ -39,6 +39,7 @@
    - `supabase/migrations/0015_admin_hub_default_period_and_room_permissions.sql`
    - `supabase/migrations/0016_admin_manage_member_settlements.sql`
    - `supabase/migrations/0017_payment_qr_information.sql`
+   - `supabase/migrations/0018_automatic_current_period.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 

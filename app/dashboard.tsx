@@ -44,6 +44,7 @@ import {
   HomeOutlined,
   LogoutOutlined,
   MenuOutlined,
+  MoreOutlined,
   PlusOutlined,
   QrcodeOutlined,
   SettingOutlined,
@@ -112,7 +113,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [onlineUserCount, setOnlineUserCount] = useState<number | null>(null);
   const periodSelectionReady = useRef(false);
   const screens = Grid.useBreakpoint();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const notify = useCallback((content: string) => {
     message.success({ content });
   }, [message]);
@@ -163,7 +164,12 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
 
   const loadFinancialPeriods = useCallback(async () => {
     if (!data.property_id) return;
-    const { data: rows, error: periodError } = await createClient().rpc("get_financial_periods", { target_property_id: data.property_id });
+    const supabase = createClient();
+    const { error: ensureError } = await supabase.rpc("ensure_current_financial_period", { target_property_id: data.property_id });
+    if (ensureError) {
+      setError("Không thể tự động khởi tạo kỳ tài chính tháng hiện tại. Hãy chạy migration 0018.");
+    }
+    const { data: rows, error: periodError } = await supabase.rpc("get_financial_periods", { target_property_id: data.property_id });
     if (periodError) {
       setError("Không tải được danh sách kỳ tài chính. Hãy chạy migration 0013.");
       setPeriods([]);
@@ -252,10 +258,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const periodOptions = useMemo(() => {
     const options = periods.map((period) => ({
       value: period.period_start,
-      label: `${financialPeriodShortLabel(period.period_start)}${period.status === "closed" ? " · Đã đóng" : ""}`,
+      label: financialPeriodShortLabel(period.period_start),
     }));
     if (!options.some((option) => option.value === currentPeriodStart())) {
-      options.unshift({ value: currentPeriodStart(), label: `${financialPeriodShortLabel(currentPeriodStart())} · Chưa tạo` });
+      options.unshift({ value: currentPeriodStart(), label: financialPeriodShortLabel(currentPeriodStart()) });
     }
     return options;
   }, [periods]);
@@ -441,6 +447,19 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     await loadFinancialPeriods();
   }
 
+  function confirmDeleteFinancialPeriod(period: FinancialPeriod) {
+    modal.confirm({
+      title: `Xóa kỳ ${financialPeriodShortLabel(period.period_start)}?`,
+      content: period.exported_at
+        ? "Khoản chi và trạng thái đối soát của kỳ sẽ bị xóa vĩnh viễn."
+        : "Bạn cần xuất Excel trước khi xóa kỳ.",
+      okText: "Xóa kỳ",
+      cancelText: "Hủy",
+      okButtonProps: { danger: true, disabled: !period.exported_at || period.is_default },
+      onOk: () => deleteFinancialPeriod(period),
+    });
+  }
+
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -532,6 +551,9 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
                     className="period-switcher"
                     aria-label="Chọn kỳ tài chính"
                   />
+                  <Tag color={!selectedPeriod ? "warning" : selectedPeriod.status === "closed" ? "default" : "success"}>
+                    {!selectedPeriod ? "Chưa tạo" : selectedPeriod.status === "closed" ? "Đã đóng" : "Đang mở"}
+                  </Tag>
                 </Flex>
                 <Typography.Title level={2}>{activeTab}</Typography.Title>
                 <Typography.Text className="page-subtitle">
@@ -587,7 +609,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               onSetDefaultPeriod={(period) => void setDefaultFinancialPeriod(period)}
               onSetPeriodStatus={(period) => void setPeriodStatus(period)}
               onExportPeriod={(period) => void exportFinancialPeriod(period)}
-              onDeletePeriod={(period) => void deleteFinancialPeriod(period)}
+              onDeletePeriod={confirmDeleteFinancialPeriod}
               onNotice={notify}
               onMembersChanged={() => void loadDashboard()}
             />
@@ -670,15 +692,17 @@ function AdminManagementView({
   onNotice: (message: string) => void;
   onMembersChanged: () => void;
 }) {
+  const periodMonthStart = periodMonth.startOf("month").format("YYYY-MM-DD");
+  const periodAlreadyExists = periods.some((period) => period.period_start === periodMonthStart);
   const periodManagement = (
     <Card
       className="section-card admin-hub-card"
-      title={<div><span>Quản lý kỳ tài chính</span><Typography.Text type="secondary" className="card-title-note">Kỳ mặc định sẽ tự động được chọn mỗi khi mở ứng dụng</Typography.Text></div>}
+      title={<div><span>Quản lý kỳ tài chính</span><Typography.Text type="secondary" className="card-title-note">Kỳ tháng hiện tại được tự động tạo và đặt làm mặc định</Typography.Text></div>}
     >
       <Alert type="info" showIcon title="Xuất Excel trước khi xóa kỳ để lưu bản đối soát." />
       <Flex gap={10} wrap className="period-create-row">
         <DatePicker picker="month" allowClear={false} value={periodMonth} onChange={(value) => value && onPeriodMonthChange(value)} format="MM/YYYY" />
-        <Button type="primary" icon={<PlusOutlined />} loading={periodSaving} onClick={onCreatePeriod}>Tạo kỳ</Button>
+        <Button type="primary" icon={<PlusOutlined />} loading={periodSaving} disabled={periodAlreadyExists} onClick={onCreatePeriod}>{periodAlreadyExists ? "Đã có kỳ" : "Tạo kỳ"}</Button>
       </Flex>
       <div className="period-manager-list admin-period-list">
         {periods.length ? periods.map((period) => (
@@ -692,22 +716,28 @@ function AdminManagementView({
               </Flex>
               <Typography.Text type="secondary">{period.expense_count} khoản · {money.format(period.total_amount)}</Typography.Text>
             </div>
-            <Space wrap>
+            <Space wrap className="period-actions">
               <Button size="small" onClick={() => onSelectPeriod(period.period_start)}>{period.period_start === selectedPeriodStart ? "Đang xem" : "Xem kỳ"}</Button>
-              <Button size="small" type={period.is_default ? "primary" : "default"} ghost={period.is_default} icon={<CalendarOutlined />} disabled={period.is_default} loading={periodSaving} onClick={() => onSetDefaultPeriod(period)}>{period.is_default ? "Kỳ mặc định" : "Đặt mặc định"}</Button>
-              <Button size="small" icon={<UnlockOutlined />} onClick={() => onSetPeriodStatus(period)} loading={periodSaving}>{period.status === "open" ? "Đóng kỳ" : "Mở lại"}</Button>
               <Button size="small" icon={<DownloadOutlined />} onClick={() => onExportPeriod(period)} loading={periodSaving}>Xuất Excel</Button>
-              <Popconfirm
-                title="Xóa toàn bộ dữ liệu kỳ này?"
-                description={period.exported_at ? "Khoản chi và trạng thái đối soát của kỳ sẽ bị xóa vĩnh viễn." : "Bạn cần xuất Excel trước khi xóa."}
-                okText="Xóa kỳ"
-                cancelText="Hủy"
-                okButtonProps={{ danger: true }}
-                disabled={!period.exported_at || period.is_default}
-                onConfirm={() => onDeletePeriod(period)}
+              <Dropdown
+                trigger={["click"]}
+                placement="bottomRight"
+                menu={{
+                  items: [
+                    { key: "default", icon: <CalendarOutlined />, label: period.is_default ? "Đang là kỳ mặc định" : "Đặt làm mặc định", disabled: period.is_default },
+                    { key: "status", icon: <UnlockOutlined />, label: period.status === "open" ? "Đóng kỳ" : "Mở lại kỳ" },
+                    { type: "divider" },
+                    { key: "delete", icon: <DeleteOutlined />, label: "Xóa kỳ", danger: true, disabled: !period.exported_at || period.is_default },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === "default") onSetDefaultPeriod(period);
+                    if (key === "status") onSetPeriodStatus(period);
+                    if (key === "delete") onDeletePeriod(period);
+                  },
+                }}
               >
-                <Button size="small" danger icon={<DeleteOutlined />} disabled={!period.exported_at || period.is_default} loading={periodSaving}>Xóa</Button>
-              </Popconfirm>
+                <Button size="small" icon={<MoreOutlined />} loading={periodSaving}>Thêm</Button>
+              </Dropdown>
             </Space>
           </div>
         )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ tài chính" />}
@@ -758,6 +788,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
   const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
   const [previousExpenses, setPreviousExpenses] = useState<PersonalExpense[]>([]);
   const [settled, setSettled] = useState(false);
+  const [settledMemberIds, setSettledMemberIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [qrImage, setQrImage] = useState<string | null>(null);
@@ -785,16 +816,18 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
         .lt("expense_date", nextPeriodStart)
         .order("expense_date", { ascending: false });
 
-      let settlementRow: { is_settled?: boolean } | null = null;
+      let settlementRows: Array<{ member_id: string; is_settled: boolean }> = [];
       let settlementError: { message?: string } | null = null;
-      if (currentMember && currentRole !== "admin" && financialPeriod) {
-        const settlementResult = await supabase.from("household_member_settlements")
-          .select("is_settled")
+      if (financialPeriod) {
+        let settlementQuery = supabase.from("household_member_settlements")
+          .select("member_id, is_settled")
           .eq("property_id", propertyId)
-          .eq("member_id", currentMember.user_id)
-          .eq("financial_period_id", financialPeriod.id)
-          .maybeSingle();
-        settlementRow = settlementResult.data;
+          .eq("financial_period_id", financialPeriod.id);
+        if (currentRole !== "admin" && currentMember) {
+          settlementQuery = settlementQuery.eq("member_id", currentMember.user_id);
+        }
+        const settlementResult = await settlementQuery;
+        settlementRows = (settlementResult.data ?? []) as Array<{ member_id: string; is_settled: boolean }>;
         settlementError = settlementResult.error;
       }
 
@@ -811,7 +844,8 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
       }));
       setExpenses(normalizedExpenses.filter((expense) => expense.expense_date >= periodStart));
       setPreviousExpenses(normalizedExpenses.filter((expense) => expense.expense_date < periodStart));
-      setSettled(Boolean(settlementRow?.is_settled));
+      setSettledMemberIds(new Set(settlementRows.filter((row) => row.is_settled).map((row) => row.member_id)));
+      setSettled(Boolean(currentMember && settlementRows.find((row) => row.member_id === currentMember.user_id)?.is_settled));
       setLoading(false);
     }
 
@@ -861,15 +895,20 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
     : currentMember
       ? previousExpenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((participant) => participant.member_id === currentMember.user_id)?.allocated_amount ?? 0), 0)
       : 0;
-  const receiver = useMemo(() => {
+  const memberBalances = useMemo(() => {
     const chargeableUsers = users.filter((user) => user.role !== "admin");
-    const balances = chargeableUsers.map((user) => {
+    return chargeableUsers.map((user) => {
       const userAllocated = expenses.reduce((sum, expense) => sum + (expense.expense_member_participants.find((participant) => participant.member_id === user.user_id)?.allocated_amount ?? 0), 0);
       const userAdvanced = expenses.filter((expense) => expense.payer_member_id === user.user_id).reduce((sum, expense) => sum + expense.amount, 0);
       return { ...user, balance: userAllocated - userAdvanced };
     });
-    return balances.sort((left, right) => left.balance - right.balance)[0] ?? null;
   }, [expenses, users]);
+  const receiver = useMemo(() => [...memberBalances].sort((left, right) => left.balance - right.balance)[0] ?? null, [memberBalances]);
+  const debtors = memberBalances.filter((member) => member.balance > 0);
+  const unsettledDebtors = debtors.filter((member) => !settledMemberIds.has(member.user_id));
+  const settledDebtors = debtors.filter((member) => settledMemberIds.has(member.user_id));
+  const outstandingTotal = unsettledDebtors.reduce((sum, member) => sum + member.balance, 0);
+  const completedExpenseTotal = expenses.filter((expense) => expense.status === "completed").reduce((sum, expense) => sum + expense.amount, 0);
 
   function downloadPaymentQr() {
     if (!qrImage) return;
@@ -893,7 +932,6 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
 
   async function confirmOwnPayment() {
     if (!currentMember || !financialPeriod) return;
-    if (financialPeriod.status === "closed") return onNotice("Kỳ đã đóng nên không thể cập nhật thanh toán.");
     setSettlementSaving(true);
     const supabase = createClient();
     const nextSettled = !settled;
@@ -914,6 +952,65 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
     onNotice(nextSettled ? `Đã xác nhận bạn thanh toán ${money.format(Math.max(balance, 0))}.` : "Đã chuyển trạng thái của bạn về chưa thanh toán.");
   }
 
+  if (currentRole === "admin") {
+    return (
+      <div className="page-stack personal-overview-page admin-overview-page">
+        <section className="personal-overview-hero admin-overview-hero">
+          <div>
+            <span className="hero-eyebrow">TỔNG QUAN NHÀ TRỌ · {financialPeriodLabel(periodStart, false)}</span>
+            <Typography.Title level={3}>Tài chính và đối soát trong tháng</Typography.Title>
+            <Typography.Paragraph>Theo dõi chi phí của nhà và những thành viên còn cần hoàn tất thanh toán.</Typography.Paragraph>
+          </div>
+          <div className="personal-balance-card">
+            <span>CÒN CẦN THU</span>
+            <strong>{loading ? "—" : money.format(outstandingTotal)}</strong>
+            <small>{unsettledDebtors.length ? `${unsettledDebtors.length} người chưa xác nhận đã đóng` : "Mọi khoản cần thu đã được xác nhận"}</small>
+          </div>
+        </section>
+
+        {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
+        {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã đóng. Không thể thêm hoặc sửa chi phí; trạng thái “Đã đóng” vẫn có thể cập nhật.`} />}
+        {loadError && <Alert type="error" showIcon title={loadError} />}
+
+        <Row gutter={[16, 16]}>
+          <MetricCard loading={loading} title="Tổng chi phí" value={currentSpending} note={`${expenses.length} khoản trong kỳ`} icon={<WalletOutlined />} tone="blue" />
+          <MetricCard loading={loading} title="Đã hoàn thành" value={completedExpenseTotal} note={`${expenses.filter((expense) => expense.status === "completed").length} khoản`} icon={<CreditCardOutlined />} tone="green" />
+          <MetricCard loading={loading} title="Chưa đóng" value={`${unsettledDebtors.length} người`} format="plain" note={money.format(outstandingTotal)} icon={<TeamOutlined />} tone="orange" />
+          <MetricCard loading={loading} title="Đã đối soát" value={`${settledDebtors.length}/${debtors.length}`} format="plain" note="Thành viên có khoản cần đóng" icon={<BankOutlined />} tone="neutral" />
+        </Row>
+
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={16}>
+            <Card className="section-card admin-overview-expense-card" title={<div><span>Khoản chi gần đây</span><Typography.Text type="secondary" className="card-title-note">Các khoản phát sinh trong kỳ {financialPeriodShortLabel(periodStart)}</Typography.Text></div>} extra={<Tag color="success">{expenses.length} khoản</Tag>}>
+              {loading ? <Skeleton active paragraph={{ rows: 6 }} /> : expenses.length ? (
+                <div className="admin-overview-expense-list">
+                  {expenses.slice(0, 6).map((expense) => (
+                    <div className="admin-overview-expense-row" key={expense.id}>
+                      <div><Typography.Text strong>{expense.category}</Typography.Text><Typography.Text type="secondary">{new Intl.DateTimeFormat("vi-VN").format(new Date(`${expense.expense_date}T00:00:00`))}</Typography.Text></div>
+                      <Typography.Text>{memberMap.get(expense.payer_member_id ?? "") ?? "—"}</Typography.Text>
+                      <Typography.Text strong>{money.format(expense.amount)}</Typography.Text>
+                      <Tag color={expense.status === "completed" ? "success" : "warning"}>{expense.status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag>
+                    </div>
+                  ))}
+                </div>
+              ) : <Empty description="Chưa có khoản chi nào trong tháng này" />}
+            </Card>
+          </Col>
+          <Col xs={24} xl={8}>
+            <SpendingComparison
+              current={currentSpending}
+              previous={previousSpending}
+              periodStart={periodStart}
+              scope="TẤT CẢ"
+              loading={loading}
+              hasCurrentPeriod={Boolean(financialPeriod)}
+            />
+          </Col>
+        </Row>
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack personal-overview-page">
       <section className="personal-overview-hero">
@@ -929,9 +1026,8 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
         </div>
       </section>
 
-      {currentRole === "admin" && <Alert type="info" showIcon title="Tài khoản quản trị viên không tham gia chia chi phí và không có số liệu cá nhân." />}
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được quản trị viên tạo.`} />}
-      {!currentMember && currentRole !== "admin" && <Alert type="warning" showIcon title="Tài khoản này chưa được gán với hồ sơ thành viên." />}
+      {!currentMember && <Alert type="warning" showIcon title="Tài khoản này chưa được gán với hồ sơ thành viên." />}
       {loadError && <Alert type="error" showIcon title={loadError} />}
 
       <Row gutter={[16, 16]}>
@@ -956,7 +1052,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
             <div><Typography.Text type="secondary">Số tiền cần chuyển</Typography.Text><Typography.Text strong>{money.format(remaining)}</Typography.Text></div>
             {receiver?.bank_account && <Button icon={<CopyOutlined />} onClick={() => void copyText(receiver.bank_account, "số tài khoản")}>Sao chép STK</Button>}
             <Button type="primary" icon={<QrcodeOutlined />} disabled={!qrImage || remaining <= 0} loading={qrLoading} onClick={() => setQrOpen(true)}>Quét QR để thanh toán</Button>
-            {currentMember && financialPeriod && balance > 0 && <Popconfirm title={settled ? "Chuyển về chưa thanh toán?" : "Bạn đã chuyển khoản xong?"} description={settled ? "Trạng thái sẽ được mở lại." : "Chỉ xác nhận sau khi giao dịch đã hoàn tất."} okText="Xác nhận" cancelText="Hủy" onConfirm={() => void confirmOwnPayment()}><Button loading={settlementSaving} disabled={financialPeriod.status === "closed"}>{settled ? "Đã xác nhận thanh toán" : "Đã chuyển khoản"}</Button></Popconfirm>}
+            {currentMember && financialPeriod && balance > 0 && <Popconfirm title={settled ? "Chuyển về chưa thanh toán?" : "Bạn đã chuyển khoản xong?"} description={settled ? "Trạng thái sẽ được mở lại." : "Chỉ xác nhận sau khi giao dịch đã hoàn tất."} okText="Xác nhận" cancelText="Hủy" onConfirm={() => void confirmOwnPayment()}><Button loading={settlementSaving}>{settled ? "Đã xác nhận thanh toán" : "Đã chuyển khoản"}</Button></Popconfirm>}
           </Flex>
         </Flex>
       </Card>
@@ -986,8 +1082,9 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
             current={currentSpending}
             previous={previousSpending}
             periodStart={periodStart}
-            scope={currentRole === "admin" ? "TẤT CẢ" : "CÁ NHÂN"}
+            scope="CÁ NHÂN"
             loading={loading}
+            hasCurrentPeriod={Boolean(financialPeriod)}
           />
         </Col>
       </Row>
@@ -1012,7 +1109,7 @@ function Overview({ organizationId, propertyId, currentMember, users, displayNam
   );
 }
 
-function SpendingComparison({ current, previous, periodStart, scope, loading }: { current: number; previous: number; periodStart: string; scope: string; loading: boolean }) {
+function SpendingComparison({ current, previous, periodStart, scope, loading, hasCurrentPeriod }: { current: number; previous: number; periodStart: string; scope: string; loading: boolean; hasCurrentPeriod: boolean }) {
   const maximum = Math.max(current, previous, 1);
   const difference = current - previous;
   const percentChange = previous > 0 ? Math.round(Math.abs(difference) / previous * 100) : current > 0 ? 100 : 0;
@@ -1021,7 +1118,9 @@ function SpendingComparison({ current, previous, periodStart, scope, loading }: 
 
   return (
     <Card className="section-card spending-comparison-card" title="So sánh chi tiêu" extra={<Tag color={difference <= 0 ? "success" : "warning"}>{scope}</Tag>}>
-      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : (
+      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : !hasCurrentPeriod ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu kỳ này" />
+      ) : (
         <>
           <div className={`spending-delta ${difference > 0 ? "increase" : "decrease"}`}>
             <Typography.Text type="secondary">So với tháng trước</Typography.Text>
@@ -1047,12 +1146,12 @@ function SpendingBar({ label, value, percent, current = false }: { label: string
   );
 }
 
-function MetricCard({ loading, title, value, note, icon, tone }: { loading: boolean; title: string; value: number; note: string; icon: React.ReactNode; tone: string }) {
+function MetricCard({ loading, title, value, note, icon, tone, format = "money" }: { loading: boolean; title: string; value: number | string; note: string; icon: React.ReactNode; tone: string; format?: "money" | "plain" }) {
   return (
     <Col xs={24} sm={12} xl={6} className="summary-col">
       <Card className={`summary-card summary-card-${tone}`}>
         <Flex justify="space-between" align="flex-start">
-          <Statistic title={title} value={loading ? 0 : value} formatter={(current) => loading ? "—" : money.format(Number(current))} />
+          <Statistic title={title} value={loading ? 0 : value} formatter={(current) => loading ? "—" : format === "money" ? money.format(Number(current)) : String(current)} />
           <span className={`metric-icon ${tone}`}>{icon}</span>
         </Flex>
         <Typography.Text type="secondary">{note}</Typography.Text>

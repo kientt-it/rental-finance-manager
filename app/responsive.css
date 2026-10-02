@@ -252,12 +252,30 @@ body {
 
   .personal-overview-hero {
     min-height: auto;
-    padding: 22px 18px;
+    padding: 20px 18px;
     border-radius: 18px;
   }
 
   .personal-balance-card {
-    padding: 18px;
+    padding: 16px;
+  }
+
+  .admin-overview-expense-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding: 14px 0;
+  }
+
+  .admin-overview-expense-row > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .admin-overview-expense-row > .ant-typography:nth-child(2) {
+    color: #607169;
+  }
+
+  .admin-overview-expense-row > .ant-typography:nth-child(3) {
+    text-align: left;
   }
 
   .personal-expense-header {

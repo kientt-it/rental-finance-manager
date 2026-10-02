@@ -444,10 +444,11 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
   }
 
   const columns: TableColumnsType<ExpenseRecord> = [
-    { title: "Ngày", dataIndex: "expense_date", width: 115, render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
-    { title: "Nội dung", dataIndex: "category", width: 190, render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference_code && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference_code}</Typography.Text>}</div> },
-    { title: "Người thanh toán", dataIndex: "payer_member_id", width: 170, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
-    { title: "Người tham gia", width: 220, render: (_, expense) => {
+    { title: "Ngày", dataIndex: "expense_date", width: 105, render: (date: string) => dayjs(date).format("DD/MM/YYYY") },
+    { title: "Nội dung", dataIndex: "category", width: 220, render: (name: string, expense) => <div><Typography.Text strong>{name}</Typography.Text>{expense.reference_code && <Typography.Text type="secondary" className="cell-subtext">Mã: {expense.reference_code}</Typography.Text>}</div> },
+    { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
+    { title: "Người thanh toán", dataIndex: "payer_member_id", width: 155, render: (id: string) => userMap.get(id)?.full_name ?? "—" },
+    { title: "Người tham gia", width: 190, responsive: ["xxl"], render: (_, expense) => {
       const names = expense.expense_member_participants.map((item) => userMap.get(item.member_id)?.full_name).filter((name): name is string => Boolean(name));
       if (!names.length) return "—";
       return <Flex gap={4} wrap className="participant-preview">
@@ -455,9 +456,8 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
         {names.length > 3 && <Popover title={`${names.length} người tham gia`} content={<div className="participant-popover">{names.map((name) => <span key={name}>{name}</span>)}</div>}><Tag className="participant-more">+{names.length - 3}</Tag></Popover>}
       </Flex>;
     } },
-    { title: "Tổng chi", dataIndex: "amount", width: 140, align: "right", render: (amount: number) => <Typography.Text strong>{vnd.format(amount)}</Typography.Text> },
-    { title: "Trạng thái", dataIndex: "status", width: 125, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
-    { title: "Thao tác", width: 120, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} disabled={financialPeriod?.status === "closed"} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={financialPeriod?.status === "closed"} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} disabled={financialPeriod?.status === "closed"} /></Popconfirm></Space> },
+    { title: "Trạng thái", dataIndex: "status", width: 115, render: (status: ExpenseRecord["status"]) => <Tag color={status === "completed" ? "success" : "warning"}>{status === "completed" ? "Hoàn thành" : "Chờ xử lý"}</Tag> },
+    { title: "Thao tác", width: 100, fixed: "right", render: (_, expense) => <Space size={2}><Button type="text" icon={<EditOutlined />} aria-label={`Sửa ${expense.category}`} disabled={financialPeriod?.status === "closed"} onClick={() => openEdit(expense)} /><Popconfirm title="Xóa khoản chi?" okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }} disabled={financialPeriod?.status === "closed"} onConfirm={() => void deleteExpense(expense)}><Button type="text" danger icon={<DeleteOutlined />} aria-label={`Xóa ${expense.category}`} disabled={financialPeriod?.status === "closed"} /></Popconfirm></Space> },
   ];
 
   function expenseActions(expense: ExpenseRecord, withLabels = false) {
@@ -504,7 +504,7 @@ export function ExpensesView({ organizationId, propertyId, onNotice, users, curr
             })}
             <Flex className="expense-mobile-total" justify="space-between"><Typography.Text>Tổng theo bộ lọc</Typography.Text><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Flex>
           </div> : <Empty description="Chưa có khoản chi nào" />
-        ) : <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: 1050 }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={4} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={4} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={5} colSpan={2} /></Table.Summary.Row> : null} />}
+        ) : <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered} pagination={false} scroll={{ x: "max-content" }} locale={{ emptyText: <Empty description="Chưa có khoản chi nào" /> }} summary={() => filtered.length ? <Table.Summary.Row><Table.Summary.Cell index={0} colSpan={2} align="right">Tổng theo bộ lọc</Table.Summary.Cell><Table.Summary.Cell index={2} align="right"><Typography.Text strong>{vnd.format(filteredTotal)}</Typography.Text></Table.Summary.Cell><Table.Summary.Cell index={3} colSpan={screens.xxl ? 4 : 3} /></Table.Summary.Row> : null} />}
       </Card>
 
       <Modal title={editingExpense ? "Chỉnh sửa chi phí" : "Thêm chi phí"} open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={680} forceRender>
@@ -702,7 +702,6 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     const isOwnSettlement = Boolean(currentMemberId) && person.user_id === currentMemberId;
     if (!canManageSettlements && !isOwnSettlement) return onNotice("Bạn chỉ có thể xác nhận thanh toán cho chính mình.");
     if (!financialPeriod) return onNotice("Kỳ tài chính này chưa được tạo.");
-    if (financialPeriod.status === "closed") return onNotice("Kỳ đã đóng nên không thể cập nhật thanh toán.");
     const supabase = createClient();
     const { error } = await supabase.from("household_member_settlements").upsert({ organization_id: organizationId, property_id: propertyId, member_id: person.user_id, period: periodStart, financial_period_id: financialPeriod.id, is_settled: paid, settled_at: paid ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: "property_id,member_id,period" });
     if (error) return onNotice("Không thể cập nhật trạng thái thanh toán.");
@@ -721,7 +720,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
   function settlementControl(person: PersonCost) {
     const isOwnRow = person.user_id === currentMemberId;
     const canToggle = canManageSettlements || isOwnRow;
-    return <div className={canToggle ? "own-settlement" : "locked-settlement"} title={canManageSettlements ? `Cập nhật trạng thái của ${person.full_name}` : isOwnRow ? "Xác nhận trạng thái thanh toán của bạn" : "Chỉ thành viên này hoặc quản trị viên mới được xác nhận"}><Checkbox checked={person.paid} disabled={!canToggle || !financialPeriod || financialPeriod.status === "closed"} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={person.paid ? "success" : "warning"}>{person.paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox></div>;
+    return <div className={canToggle ? "own-settlement" : "locked-settlement"} title={canManageSettlements ? `Cập nhật trạng thái của ${person.full_name}` : isOwnRow ? "Xác nhận trạng thái thanh toán của bạn" : "Chỉ thành viên này hoặc quản trị viên mới được xác nhận"}><Checkbox checked={person.paid} disabled={!canToggle || !financialPeriod} onChange={(event) => void togglePaid(person, event.target.checked)}><Tag color={person.paid ? "success" : "warning"}>{person.paid ? "Đã đóng" : "Chưa đóng"}</Tag></Checkbox></div>;
   }
 
   const columns: TableColumnsType<PersonCost> = [
@@ -737,7 +736,7 @@ export function PeopleCostsView({ organizationId, propertyId, users, onNotice, c
     <div className="page-stack">
       {celebrating && <div className="confetti-layer" aria-hidden="true">{Array.from({ length: 42 }, (_, index) => <i key={index} style={{ "--confetti-x": `${(index * 47) % 100}vw`, "--confetti-drift": `${((index * 31) % 180) - 90}px`, "--confetti-delay": `${(index % 9) * 0.055}s`, "--confetti-rotate": `${(index * 73) % 360}deg`, "--confetti-color": ["#087a58", "#f5b942", "#e85d75", "#4f8ee8", "#8f63d8"][index % 5] } as CSSProperties} />)}</div>}
       {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
-      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã đóng. Trạng thái thanh toán đang ở chế độ chỉ đọc.`} />}
+      {financialPeriod?.status === "closed" && <Alert type="info" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} đã đóng. Không thể thêm hoặc sửa chi phí; trạng thái “Đã đóng” vẫn có thể cập nhật.`} />}
       <Card className="payment-banner"><Row align="middle" gutter={[20, 20]}><Col flex="auto"><Typography.Text className="banner-eyebrow">KỲ THANH TOÁN {financialPeriodShortLabel(periodStart)}</Typography.Text><Typography.Title level={3}>Đối soát chi phí thành viên</Typography.Title><Typography.Paragraph>Dữ liệu chỉ được tính từ các khoản chi thuộc kỳ đang chọn.</Typography.Paragraph></Col><Col><div className="payment-progress"><Progress type="circle" percent={paidPercent} size={screens.md === false ? 68 : 90} strokeColor="#ffffff" railColor="rgba(255,255,255,.2)" styles={{ indicator: { color: "#ffffff" } }} /><span>Đã hoàn thành</span></div></Col></Row></Card>
       <ViewSummary items={[
         { label: "Chi phí cần chia", value: vnd.format(total), note: `${expenses.length} khoản trong kỳ`, icon: <WalletOutlined />, tone: "neutral" },
