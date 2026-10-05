@@ -1,0 +1,3 @@
+[functions.payment-reminders]
+# The function validates admin JWTs for test emails and a private cron secret for scheduled runs.
+verify_jwt = false

@@ -40,6 +40,7 @@
    - `supabase/migrations/0016_admin_manage_member_settlements.sql`
    - `supabase/migrations/0017_payment_qr_information.sql`
    - `supabase/migrations/0018_automatic_current_period.sql`
+   - `supabase/migrations/0019_payment_reminders.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 
@@ -60,6 +61,10 @@ npm start
 ```
 
 Không đưa `service_role` key vào biến môi trường public hoặc mã phía trình duyệt.
+
+### Thông báo đến hạn thanh toán
+
+Làm theo [hướng dẫn triển khai thông báo thanh toán](supabase/payment-reminders-setup.md) để đặt Resend API key trong Supabase Secrets, triển khai Edge Function và lên lịch chạy miễn phí mỗi ngày.
 
    Bước phát triển tiếp theo
 

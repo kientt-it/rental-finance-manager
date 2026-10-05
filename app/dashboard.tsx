@@ -58,6 +58,7 @@ import { currentPeriodStart, financialPeriodLabel, financialPeriodShortLabel, ty
 import { createPeriodXlsx, downloadPeriodXlsx } from "@/lib/period-xlsx";
 import { ExpensesView, MembersView, PaymentQrManagement, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 import SupportFloatingActions, { SupportSettingsManagement } from "./support-floating-actions";
+import { NotificationCenter, PaymentReminderSettings } from "./payment-reminders";
 
 type DashboardData = { organization_id: string; property_id: string; property_name: string };
 type AccountProfileForm = { username: string; full_name: string; phone?: string; bank_account?: string; bank_name?: string; new_password?: string; confirm_password?: string };
@@ -562,6 +563,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               </div>
             </Flex>
             <Space className="header-actions">
+              <NotificationCenter userId={userId} onNotice={notify} />
               <div className="online-presence" title="Số người đang truy cập trong nhà này" aria-live="polite">
                 <span className={`online-presence-dot${onlineUserCount === null ? " is-loading" : ""}`} aria-hidden="true" />
                 <TeamOutlined />
@@ -755,6 +757,7 @@ function AdminManagementView({
           { key: "rooms", label: <Space><HomeOutlined />Phòng</Space>, children: <RoomsView organizationId={organizationId} propertyId={propertyId} users={users} onNotice={onNotice} canManage /> },
           { key: "members", label: <Space><TeamOutlined />Thành viên</Space>, children: <MembersView users={users} currentUserEmail={currentUserEmail} onNotice={onNotice} onChanged={onMembersChanged} /> },
           { key: "qr", label: <Space><QrcodeOutlined />Mã QR</Space>, children: <PaymentQrManagement organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
+          { key: "notifications", label: <Space><CalendarOutlined />Thông báo</Space>, children: <PaymentReminderSettings organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
           { key: "support", label: <Space><SettingOutlined />Hỗ trợ</Space>, children: <SupportSettingsManagement organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
         ]}
       />

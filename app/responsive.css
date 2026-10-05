@@ -861,10 +861,6 @@ body {
     display: inline-flex !important;
   }
 
-  .header-actions .ant-btn[aria-label="Thông báo"] {
-    display: none !important;
-  }
-
   .page-header h2.ant-typography {
     font-size: 23px;
   }
