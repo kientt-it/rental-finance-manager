@@ -115,7 +115,7 @@ Deno.serve(async (request) => {
     if (!validEmail(testRecipientEmail)) return json(400, { error: "Địa chỉ email nhận thử chưa đúng định dạng." });
     try {
       const dueDate = vietnamToday();
-      const sample = { member_name: "Người nhận thử", items: "Tiền nhà và sinh hoạt", period_start: dueDate.slice(0, 7) + "-01", amount: 3600000, due_date: dueDate };
+      const sample = { member_name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng); Chi phí sinh hoạt: điện, nước", period_start: dueDate.slice(0, 7) + "-01", amount: 6050000, due_date: dueDate };
       await sendEmail(settings as Settings, testRecipientEmail, settings.email_subject_template, settings.email_body_template, sample);
       return json(200, { ok: true, recipient: testRecipientEmail });
     } catch (error) { return json(502, { error: error instanceof Error ? error.message : "Gửi email thử thất bại." }); }

@@ -96,7 +96,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "01";
     const year = part("year"); const month = part("month"); const day = part("day");
     const values = {
-      name: "Người nhận thử", items: "Tiền nhà và sinh hoạt", period: `${month}/${year}`, amount: "3.600.000 đ",
+      name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng); Chi phí sinh hoạt: điện, nước", period: `${month}/${year}`, amount: "6.050.000 đ",
       due_date: new Date(`${year}-${month}-${day}T00:00:00Z`).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }),
     };
     const fillTemplate = (template: string) => Object.entries(values).reduce((result, [key, value]) => result.replaceAll("{{" + key + "}}", value), template);

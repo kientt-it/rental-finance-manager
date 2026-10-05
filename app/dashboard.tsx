@@ -251,7 +251,12 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     }
   }, [activeTab, currentRole, loading, router, selectedPeriodStart]);
 
-  const currentMember = useMemo(() => organizationUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase()) ?? null, [organizationUsers, userEmail]);
+  const currentMember = useMemo(
+    () => organizationUsers.find((user) => user.auth_user_id === userId)
+      ?? organizationUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase())
+      ?? null,
+    [organizationUsers, userEmail, userId],
+  );
   const displayName = currentMember?.full_name || userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
   const selectedPeriod = periods.find((period) => period.period_start === selectedPeriodStart) ?? null;
@@ -591,7 +596,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               onNotice={notify}
             />
           )}
-          {activeTab === "Phòng" && <RoomsView onNotice={notify} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} />}
+          {activeTab === "Phòng" && <RoomsView onNotice={notify} organizationId={data.organization_id} propertyId={data.property_id} users={organizationUsers} currentMemberId={currentMember?.user_id ?? null} canManageRent={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Chi phí" && <ExpensesView onNotice={notify} users={organizationUsers} currentUserEmail={userEmail} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Chi phí từng người" && <PeopleCostsView onNotice={notify} users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} currentMemberId={currentMember?.user_id ?? null} canManageSettlements={currentRole === "admin"} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
           {activeTab === "Báo cáo" && <ReportView users={organizationUsers} organizationId={data.organization_id} propertyId={data.property_id} financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} />}
@@ -602,6 +607,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
               users={organizationUsers}
               currentUserEmail={userEmail}
               periods={periods}
+              selectedPeriod={selectedPeriod}
               selectedPeriodStart={selectedPeriodStart}
               periodMonth={periodMonth}
               periodSaving={periodSaving}
@@ -663,6 +669,7 @@ function AdminManagementView({
   users,
   currentUserEmail,
   periods,
+  selectedPeriod,
   selectedPeriodStart,
   periodMonth,
   periodSaving,
@@ -681,6 +688,7 @@ function AdminManagementView({
   users: OrganizationUser[];
   currentUserEmail: string;
   periods: FinancialPeriod[];
+  selectedPeriod: FinancialPeriod | null;
   selectedPeriodStart: string;
   periodMonth: ReturnType<typeof dayjs>;
   periodSaving: boolean;
@@ -754,7 +762,7 @@ function AdminManagementView({
         defaultActiveKey="periods"
         items={[
           { key: "periods", label: <Space><CalendarOutlined />Kỳ tài chính</Space>, children: periodManagement },
-          { key: "rooms", label: <Space><HomeOutlined />Phòng</Space>, children: <RoomsView organizationId={organizationId} propertyId={propertyId} users={users} onNotice={onNotice} canManage /> },
+          { key: "rooms", label: <Space><HomeOutlined />Phòng</Space>, children: <RoomsView organizationId={organizationId} propertyId={propertyId} users={users} onNotice={onNotice} canManage financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} /> },
           { key: "members", label: <Space><TeamOutlined />Thành viên</Space>, children: <MembersView users={users} currentUserEmail={currentUserEmail} onNotice={onNotice} onChanged={onMembersChanged} /> },
           { key: "qr", label: <Space><QrcodeOutlined />Mã QR</Space>, children: <PaymentQrManagement organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
           { key: "notifications", label: <Space><CalendarOutlined />Thông báo</Space>, children: <PaymentReminderSettings organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },

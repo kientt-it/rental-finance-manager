@@ -41,6 +41,8 @@
    - `supabase/migrations/0017_payment_qr_information.sql`
    - `supabase/migrations/0018_automatic_current_period.sql`
    - `supabase/migrations/0019_payment_reminders.sql`
+   - `supabase/migrations/0020_room_rent_settlements.sql`
+   - `supabase/migrations/0021_room_rent_billing_cycles.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 

@@ -1094,6 +1094,89 @@ select {
   font-size: 9px;
 }
 
+.room-rent-settlement {
+  padding: 14px 0;
+}
+
+.room-rent-settlement-heading {
+  padding-bottom: 10px;
+}
+
+.room-rent-settlement-heading > div,
+.room-rent-member-person > span {
+  display: grid;
+  min-width: 0;
+}
+
+.room-rent-settlement-heading .ant-typography-secondary,
+.room-rent-member-person .ant-typography-secondary {
+  font-size: 12px;
+}
+
+.room-rent-member-list {
+  border: 1px solid #edf1ef;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.room-rent-not-due {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #edf1ef;
+  border-radius: 12px;
+  background: #fafcfb;
+}
+
+.room-rent-member-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 10px;
+}
+
+.room-rent-member-row + .room-rent-member-row {
+  border-top: 1px solid #edf1ef;
+}
+
+.room-rent-member-row[aria-busy="true"] {
+  opacity: 0.65;
+}
+
+.room-rent-member-person {
+  min-width: 0;
+}
+
+.room-rent-member-person > span,
+.room-rent-member-person .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-rent-member-person .ant-avatar {
+  flex: 0 0 auto;
+  background: #e9f5ef;
+  color: #087a58;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.room-rent-member-row .ant-checkbox-wrapper {
+  flex: 0 0 auto;
+  margin-inline-start: 0;
+}
+
+.room-rent-member-row .ant-tag {
+  min-width: 76px;
+  margin-inline-end: 0;
+  text-align: center;
+}
+
 .room-card-meta {
   padding-top: 12px;
   border-top: 1px solid #edf1ef;

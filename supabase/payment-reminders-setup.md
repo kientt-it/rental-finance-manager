@@ -4,7 +4,7 @@ Tính năng dùng Supabase Edge Functions + Cron và Gmail API. Không cần mua
 
 ## 1. Áp dụng cấu trúc dữ liệu
 
-Chạy migration `0019_payment_reminders.sql` trong Supabase SQL Editor hoặc deploy migration bằng Supabase CLI.
+Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_settlements.sql` và `0021_room_rent_billing_cycles.sql` trong Supabase SQL Editor, hoặc deploy migration bằng Supabase CLI. Migration `0020` bổ sung trạng thái đóng tiền phòng theo từng thành viên; migration `0021` bổ sung chu kỳ thu tiền phòng 1/3/6/12 tháng, quyền tự xác nhận của từng thành viên và cộng đúng tiền phòng của cả chu kỳ vào email nhắc hạn.
 
 ## 2. Bật Gmail API và tạo OAuth credentials
 
