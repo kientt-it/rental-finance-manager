@@ -73,7 +73,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     setTesting(true);
     const { data, error } = await createClient().functions.invoke("payment-reminders", { body: { action: "test", property_id: propertyId } });
     setTesting(false);
-    if (error || data?.error) return onNotice(data?.error || "Không gửi được email thử. Kiểm tra Resend API key và tên miền xác thực.");
+    if (error || data?.error) return onNotice(data?.error || "Không gửi được email thử. Hãy kiểm tra cấu hình Gmail API trong Supabase.");
     onNotice("Đã gửi email thử đến email tài khoản quản trị.");
   }
   const preview = useMemo(() => ({
@@ -100,10 +100,10 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
               <Typography.Text type="secondary" className="reminder-form-hint">Ngày đến hạn tự lùi về ngày cuối tháng nếu tháng đó ngắn hơn ngày đã chọn.</Typography.Text>
             </Card></Col>
             <Col xs={24} lg={12}><Card size="small" title={<Space><MailOutlined />Cấu hình gửi email</Space>} className="reminder-subcard">
-              <Alert type="warning" showIcon title="API key được lưu trong Supabase Secrets, không nằm trong cơ sở dữ liệu." description="Thêm RESEND_API_KEY khi triển khai Edge Function. Xác thực tên miền gửi trong Resend trước khi bật email." />
+              <Alert type="warning" showIcon title="Gửi qua Gmail API — không cần tên miền riêng." description="Cấu hình OAuth Gmail API trong Supabase Edge Function Secrets. Email gửi bên dưới phải trùng với tài khoản Gmail đã cấp quyền gửi." />
               <Row gutter={12} className="reminder-email-fields">
                 <Col xs={24} sm={12}><Form.Item name="sender_name" label="Tên người gửi" rules={[{ required: true, max: 100 }]}><Input placeholder="708 La Thành" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item name="sender_email" label="Email gửi" rules={[{ type: "email", message: "Email chưa đúng định dạng" }]}><Input placeholder="nhacno@tenmien.vn" /></Form.Item></Col>
+                <Col xs={24} sm={12}><Form.Item name="sender_email" label="Tài khoản Gmail gửi" rules={[{ required: true, type: "email", message: "Nhập địa chỉ Gmail đã cấp quyền gửi" }]}><Input placeholder="ten.tai.khoan@gmail.com" /></Form.Item></Col>
                 <Col span={24}><Form.Item name="reply_to" label="Email nhận phản hồi" rules={[{ type: "email", message: "Email chưa đúng định dạng" }]}><Input placeholder="quanly@tenmien.vn" /></Form.Item></Col>
               </Row>
               <Space wrap><Button icon={<SendOutlined />} onClick={() => void sendTest()} loading={testing} disabled={!settings.sender_email}>Gửi email thử</Button><Button icon={<ReloadOutlined />} onClick={() => void load()}>Tải lại</Button></Space>

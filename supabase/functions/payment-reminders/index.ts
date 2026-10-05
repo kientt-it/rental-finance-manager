@@ -17,28 +17,68 @@ type Candidate = {
 };
 type Event = Candidate & { id: string; email_status: string; attempt_count: number };
 function fill(template: string, values: Record<string, string>) { return Object.entries(values).reduce((result, [key, value]) => result.replaceAll("{{" + key + "}}", value), template); }
-function escapeHtml(value: string) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
 function text(value: unknown) { return String(value ?? ""); }
 function mailValues(row: { member_name: string; items: string; period_start: string; amount: number; due_date: string }) {
   const period = new Date(row.period_start + "T00:00:00Z").toLocaleDateString("vi-VN", { month: "2-digit", year: "numeric", timeZone: "UTC" });
   const dueDate = new Date(row.due_date + "T00:00:00Z").toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
   return { name: text(row.member_name), items: text(row.items), period, amount: new Intl.NumberFormat("vi-VN").format(Number(row.amount)) + " đ", due_date: dueDate };
 }
+
+let cachedAccessToken: { value: string; expiresAt: number } | null = null;
+async function gmailAccessToken() {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60_000) return cachedAccessToken.value;
+  const clientId = Deno.env.get("GMAIL_CLIENT_ID");
+  const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) throw new Error("Chưa cấu hình GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET và GMAIL_REFRESH_TOKEN trong Supabase Edge Function Secrets.");
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+  });
+  const result = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string; error?: string };
+  if (!response.ok || !result.access_token) throw new Error(result.error_description || result.error || "Không lấy được quyền truy cập Gmail API. Hãy kiểm tra OAuth credentials và refresh token.");
+  cachedAccessToken = { value: result.access_token, expiresAt: Date.now() + (Number(result.expires_in) || 3600) * 1000 };
+  return result.access_token;
+}
+function base64Utf8(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+function encodedHeader(value: string) { return "=?UTF-8?B?" + base64Utf8(value.replace(/[\r\n]+/g, " ")) + "?="; }
+function validEmail(value: string) { return /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(value); }
 async function sendEmail(settings: Settings, to: string, subjectTemplate: string, bodyTemplate: string, row: { member_name: string; items: string; period_start: string; amount: number; due_date: string }) {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  if (!apiKey) throw new Error("Chưa cấu hình RESEND_API_KEY trong Supabase Secrets.");
   if (!settings.sender_email || !settings.sender_name) throw new Error("Chưa cấu hình tên và email người gửi.");
+  const senderEmail = Deno.env.get("GMAIL_SENDER_EMAIL");
+  if (!senderEmail || !validEmail(senderEmail)) throw new Error("Chưa cấu hình GMAIL_SENDER_EMAIL hợp lệ trong Supabase Edge Function Secrets.");
+  if (settings.sender_email.trim().toLowerCase() !== senderEmail.trim().toLowerCase()) throw new Error("Email gửi trong cấu hình phải trùng với GMAIL_SENDER_EMAIL đã xác thực qua Google OAuth.");
+  if (!validEmail(to)) throw new Error("Địa chỉ email người nhận không hợp lệ.");
+  if (settings.reply_to && !validEmail(settings.reply_to.trim())) throw new Error("Email nhận phản hồi chưa đúng định dạng.");
   const values = mailValues(row);
-  const subject = fill(subjectTemplate, values).slice(0, 180);
+  const subject = fill(subjectTemplate, values).slice(0, 180).replace(/[\r\n]+/g, " ");
   const content = fill(bodyTemplate, values).slice(0, 5000);
-  const payload: Record<string, unknown> = {
-    from: settings.sender_name + " <" + settings.sender_email + ">", to: [to], subject, text: content,
-    html: "<div style=\"font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.6\">" + escapeHtml(content) + "</div>",
-  };
-  if (settings.reply_to) payload.reply_to = settings.reply_to;
-  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(text((result as { message?: string }).message) || "Resend không gửi được email.");
+  const contentBase64 = base64Utf8(content).replace(/.{1,76}/g, "$&\r\n").trimEnd();
+  const mime = [
+    "From: " + encodedHeader(settings.sender_name) + " <" + senderEmail + ">",
+    "To: " + to.trim(),
+    ...(settings.reply_to ? ["Reply-To: " + settings.reply_to.trim()] : []),
+    "Subject: " + encodedHeader(subject),
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    contentBase64,
+  ].join("\r\n");
+  const raw = btoa(mime).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + await gmailAccessToken(), "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  const result = await response.json().catch(() => ({})) as { error?: { message?: string }; id?: string };
+  if (!response.ok) throw new Error(result.error?.message || "Gmail API không gửi được email.");
   return result;
 }
 

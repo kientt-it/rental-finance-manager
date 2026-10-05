@@ -64,7 +64,7 @@ Không đưa `service_role` key vào biến môi trường public hoặc mã ph�
 
 ### Thông báo đến hạn thanh toán
 
-Làm theo [hướng dẫn triển khai thông báo thanh toán](supabase/payment-reminders-setup.md) để đặt Resend API key trong Supabase Secrets, triển khai Edge Function và lên lịch chạy miễn phí mỗi ngày.
+Làm theo [hướng dẫn triển khai thông báo thanh toán](supabase/payment-reminders-setup.md) để cấu hình Gmail API trong Supabase Secrets, triển khai Edge Function và lên lịch chạy miễn phí mỗi ngày. Gmail API không cần tên miền riêng; cần OAuth credentials của một tài khoản Gmail dùng làm người gửi.
 
    Bước phát triển tiếp theo
 
