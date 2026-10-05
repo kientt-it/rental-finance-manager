@@ -43,6 +43,7 @@
    - `supabase/migrations/0019_payment_reminders.sql`
    - `supabase/migrations/0020_room_rent_settlements.sql`
    - `supabase/migrations/0021_room_rent_billing_cycles.sql`
+   - `supabase/migrations/0022_split_rent_and_living_reminders.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 

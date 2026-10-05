@@ -455,7 +455,7 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
           const canToggle = canManageRent || resident.user_id === currentMemberId;
           const status = <Tag color={isSettled ? "success" : "warning"}>{isSettled ? "Đã đóng" : "Chưa đóng"}</Tag>;
           return <div className="room-rent-member-row" key={resident.user_id} aria-busy={savingSettlementKey === settlementKey}>
-            <Space className="room-rent-member-person" size={8}><Avatar size={28}>{resident.full_name.slice(0, 1).toUpperCase()}</Avatar><span><Typography.Text strong>{resident.full_name}</Typography.Text><Typography.Text type="secondary">{vnd.format(shareAmount)}</Typography.Text></span></Space>
+            <Space className="room-rent-member-person" size={10}><Avatar size={28}>{resident.full_name.slice(0, 1).toUpperCase()}</Avatar><div className="room-rent-member-copy"><Typography.Text strong>{resident.full_name}</Typography.Text><Typography.Text type="secondary">{vnd.format(shareAmount)} / kỳ</Typography.Text></div></Space>
             {canToggle ? <Checkbox checked={isSettled} disabled={!financialPeriod || savingSettlementKey === settlementKey} aria-label={`Đánh dấu ${resident.full_name} đã đóng tiền phòng`} onChange={(event) => void onToggleRentSettlement(room, resident.user_id, resident.full_name, event.target.checked)}>{status}</Checkbox> : status}
           </div>;
         })}</div> : <Typography.Text type="secondary">Chưa có người ở</Typography.Text>}

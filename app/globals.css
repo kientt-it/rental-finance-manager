@@ -1103,13 +1103,13 @@ select {
 }
 
 .room-rent-settlement-heading > div,
-.room-rent-member-person > span {
+.room-rent-member-copy {
   display: grid;
   min-width: 0;
 }
 
 .room-rent-settlement-heading .ant-typography-secondary,
-.room-rent-member-person .ant-typography-secondary {
+.room-rent-member-copy .ant-typography-secondary {
   font-size: 12px;
 }
 
@@ -1151,8 +1151,12 @@ select {
   min-width: 0;
 }
 
-.room-rent-member-person > span,
-.room-rent-member-person .ant-typography {
+.room-rent-member-copy {
+  gap: 3px;
+}
+
+.room-rent-member-copy .ant-typography {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2259,6 +2263,11 @@ select {
 .reminder-email-fields { margin-top: 14px; }
 .reminder-save-row { margin: 14px 0 20px; }
 .payment-reminder-settings .ant-alert { margin-bottom: 14px; }
+.reminder-sender-card { margin-bottom: 16px; }
+.reminder-scope-tabs .ant-tabs-nav { margin-bottom: 16px; }
+.reminder-scope-tabs .ant-tabs-tab { min-height: 42px; }
+.reminder-channel-panel { display: grid; gap: 16px; }
+.reminder-channel-preview { min-height: 0; }
 .email-preview-card .ant-card-body { min-height: 275px; padding: 18px; background: #f6f8f7; }
 .email-preview-from { color: #607169; font-size: 12px; }
 .email-preview-subject { margin-top: 14px; font-weight: 750; }
@@ -2275,6 +2284,8 @@ select {
   .notification-center-trigger { width: 38px; height: 38px; }
   .notification-center-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
   .payment-reminder-settings .reminder-number-row .ant-form-item-label { min-height: 42px; }
+  .reminder-scope-tabs .ant-tabs-nav-list { min-width: max-content; }
+  .reminder-scope-tabs .ant-tabs-tab { padding-inline: 4px; }
   .reminder-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .reminder-history-person { grid-column: 1 / -1; }
   .reminder-history-info { grid-column: 1; }

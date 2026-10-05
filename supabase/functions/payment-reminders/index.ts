@@ -9,13 +9,15 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 type Settings = {
   property_id: string; organization_id: string; enabled: boolean; email_enabled: boolean; in_app_enabled: boolean;
   sender_name: string; sender_email: string; reply_to: string; email_subject_template: string; email_body_template: string;
+  rent_enabled: boolean; rent_email_enabled: boolean; rent_in_app_enabled: boolean;
+  rent_email_subject_template: string; rent_email_body_template: string;
 };
 type Candidate = {
   organization_id: string; property_id: string; period_start: string; due_date: string; member_id: string; auth_user_id: string;
   member_name: string; recipient_email: string; amount: number; items: string; reminder_type: "before" | "due" | "overdue";
-  in_app_enabled: boolean; email_enabled: boolean;
+  reminder_scope: "living_expense" | "rent"; in_app_enabled: boolean; email_enabled: boolean;
 };
-type Event = Candidate & { id: string; email_status: string; attempt_count: number };
+type Event = Omit<Candidate, "reminder_scope"> & { id: string; reminder_scope: Candidate["reminder_scope"] | "legacy_combined"; email_status: string; attempt_count: number };
 function fill(template: string, values: Record<string, string>) { return Object.entries(values).reduce((result, [key, value]) => result.replaceAll("{{" + key + "}}", value), template); }
 function text(value: unknown) { return String(value ?? ""); }
 function mailValues(row: { member_name: string; items: string; period_start: string; amount: number; due_date: string }) {
@@ -112,12 +114,22 @@ Deno.serve(async (request) => {
     const { data: settings, error: settingsError } = await userClient.from("payment_reminder_settings").select("*").eq("property_id", propertyId).eq("organization_id", membership.organization_id).maybeSingle();
     if (settingsError || !settings) return json(400, { error: "Hãy lưu cấu hình email trước khi gửi thử." });
     const testRecipientEmail = text((body as { test_recipient_email?: string }).test_recipient_email).trim();
+    const reminderScope = text((body as { reminder_scope?: string }).reminder_scope) === "rent" ? "rent" : "living_expense";
     if (!validEmail(testRecipientEmail)) return json(400, { error: "Địa chỉ email nhận thử chưa đúng định dạng." });
     try {
       const dueDate = vietnamToday();
-      const sample = { member_name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng); Chi phí sinh hoạt: điện, nước", period_start: dueDate.slice(0, 7) + "-01", amount: 6050000, due_date: dueDate };
-      await sendEmail(settings as Settings, testRecipientEmail, settings.email_subject_template, settings.email_body_template, sample);
-      return json(200, { ok: true, recipient: testRecipientEmail });
+      const sample = reminderScope === "rent"
+        ? { member_name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng)", period_start: dueDate.slice(0, 7) + "-01", amount: 4065000, due_date: dueDate }
+        : { member_name: "Người nhận thử", items: "Chi phí sinh hoạt: điện, nước", period_start: dueDate.slice(0, 7) + "-01", amount: 1050000, due_date: dueDate };
+      const typedSettings = settings as Settings;
+      await sendEmail(
+        typedSettings,
+        testRecipientEmail,
+        reminderScope === "rent" ? typedSettings.rent_email_subject_template : typedSettings.email_subject_template,
+        reminderScope === "rent" ? typedSettings.rent_email_body_template : typedSettings.email_body_template,
+        sample,
+      );
+      return json(200, { ok: true, recipient: testRecipientEmail, reminder_scope: reminderScope });
     } catch (error) { return json(502, { error: error instanceof Error ? error.message : "Gửi email thử thất bại." }); }
   }
 
@@ -129,13 +141,14 @@ Deno.serve(async (request) => {
     organization_id: row.organization_id, property_id: row.property_id, period_start: row.period_start, due_date: row.due_date,
     member_id: row.member_id, auth_user_id: row.auth_user_id, member_name: row.member_name, recipient_email: row.recipient_email,
     amount: Math.round(Number(row.amount)), items: row.items, reminder_type: row.reminder_type, in_app_enabled: row.in_app_enabled,
+    reminder_scope: row.reminder_scope,
     email_status: row.email_enabled ? "pending" : "skipped",
   }));
   if (eventRows.length) {
-    const { error: insertError } = await service.from("payment_reminder_events").upsert(eventRows, { onConflict: "property_id,member_id,period_start,due_date,reminder_type", ignoreDuplicates: true });
+    const { error: insertError } = await service.from("payment_reminder_events").upsert(eventRows, { onConflict: "property_id,member_id,period_start,due_date,reminder_type,reminder_scope", ignoreDuplicates: true });
     if (insertError) return json(500, { error: insertError.message });
   }
-  const { data: settingsRows, error: settingsError } = await service.from("payment_reminder_settings").select("*").eq("enabled", true).eq("email_enabled", true);
+  const { data: settingsRows, error: settingsError } = await service.from("payment_reminder_settings").select("*");
   if (settingsError) return json(500, { error: settingsError.message });
   const settingsByProperty = new Map(((settingsRows ?? []) as Settings[]).map((setting) => [setting.property_id, setting]));
   const { data: retryRows, error: retryError } = await service.from("payment_reminder_events").select("*").in("email_status", ["pending", "failed"]).lt("attempt_count", 3).order("created_at").limit(100);
@@ -143,10 +156,20 @@ Deno.serve(async (request) => {
   let sent = 0; let failed = 0; let skipped = 0;
   for (const event of (retryRows ?? []) as Event[]) {
     const setting = settingsByProperty.get(event.property_id);
-    if (!setting) { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
+    if (event.reminder_scope === "legacy_combined") { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
+    const scopeEnabled = event.reminder_scope === "rent"
+      ? Boolean(setting?.rent_enabled && setting?.rent_email_enabled)
+      : Boolean(setting?.enabled && setting?.email_enabled);
+    if (!setting || !scopeEnabled) { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
     const attempt = Number(event.attempt_count) + 1;
     try {
-      await sendEmail(setting, event.recipient_email, setting.email_subject_template, setting.email_body_template, event);
+      await sendEmail(
+        setting,
+        event.recipient_email,
+        event.reminder_scope === "rent" ? setting.rent_email_subject_template : setting.email_subject_template,
+        event.reminder_scope === "rent" ? setting.rent_email_body_template : setting.email_body_template,
+        event,
+      );
       await service.from("payment_reminder_events").update({ email_status: "sent", email_error: null, attempt_count: attempt, sent_at: new Date().toISOString() }).eq("id", event.id);
       sent++;
     } catch (error) {
