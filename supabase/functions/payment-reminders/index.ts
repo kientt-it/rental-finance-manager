@@ -23,6 +23,11 @@ function mailValues(row: { member_name: string; items: string; period_start: str
   const dueDate = new Date(row.due_date + "T00:00:00Z").toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
   return { name: text(row.member_name), items: text(row.items), period, amount: new Intl.NumberFormat("vi-VN").format(Number(row.amount)) + " đ", due_date: dueDate };
 }
+function vietnamToday() {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "01";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 async function gmailAccessToken() {
@@ -106,11 +111,13 @@ Deno.serve(async (request) => {
     if (!membership) return json(403, { error: "Chỉ quản trị viên mới được gửi email thử." });
     const { data: settings, error: settingsError } = await userClient.from("payment_reminder_settings").select("*").eq("property_id", propertyId).eq("organization_id", membership.organization_id).maybeSingle();
     if (settingsError || !settings) return json(400, { error: "Hãy lưu cấu hình email trước khi gửi thử." });
-    if (!user.email) return json(400, { error: "Tài khoản quản trị chưa có email nhận." });
+    const testRecipientEmail = text((body as { test_recipient_email?: string }).test_recipient_email).trim();
+    if (!validEmail(testRecipientEmail)) return json(400, { error: "Địa chỉ email nhận thử chưa đúng định dạng." });
     try {
-      const sample = { member_name: user.user_metadata?.full_name || "Quản trị viên", items: "Tiền nhà và sinh hoạt", period_start: new Date().toISOString().slice(0, 7) + "-01", amount: 3600000, due_date: new Date().toISOString().slice(0, 10) };
-      await sendEmail(settings as Settings, user.email, settings.email_subject_template, settings.email_body_template, sample);
-      return json(200, { ok: true });
+      const dueDate = vietnamToday();
+      const sample = { member_name: "Người nhận thử", items: "Tiền nhà và sinh hoạt", period_start: dueDate.slice(0, 7) + "-01", amount: 3600000, due_date: dueDate };
+      await sendEmail(settings as Settings, testRecipientEmail, settings.email_subject_template, settings.email_body_template, sample);
+      return json(200, { ok: true, recipient: testRecipientEmail });
     } catch (error) { return json(502, { error: error instanceof Error ? error.message : "Gửi email thử thất bại." }); }
   }
 

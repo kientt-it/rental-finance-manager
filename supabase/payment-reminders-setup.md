@@ -75,4 +75,4 @@ Trước khi chạy lại đoạn lên lịch, gỡ job cũ bằng `select cron.
 
 ## 6. Gửi email thử
 
-Trong **Quản trị → Thông báo**, nhập tên và địa chỉ Gmail đã kết nối OAuth, tùy chọn email nhận phản hồi, lưu cấu hình rồi bấm **Gửi email thử**. Địa chỉ người gửi phải trùng `GMAIL_SENDER_EMAIL`. Email thử gửi đến email tài khoản quản trị đang đăng nhập. Email nhắc thật gửi cho thành viên có tài khoản liên kết và email hợp lệ.
+Trong **Quản trị → Thông báo**, nhập tên và địa chỉ Gmail đã kết nối OAuth, nhập địa chỉ nhận thư thử, tùy chọn email nhận phản hồi, lưu cấu hình rồi bấm **Gửi email thử**. Địa chỉ người gửi phải trùng `GMAIL_SENDER_EMAIL`. Email nhắc thật gửi cho thành viên có tài khoản liên kết và email hợp lệ.

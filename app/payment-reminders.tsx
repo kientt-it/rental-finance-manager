@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Badge, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Skeleton, Space, Spin, Switch, Tag, Typography } from "antd";
+import { Badge, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Skeleton, Space, Spin, Switch, Tag, Typography } from "antd";
 import { BellOutlined, CheckOutlined, ClockCircleOutlined, MailOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -32,6 +32,16 @@ function statusTag(status: ReminderEvent["email_status"]) {
   if (status === "pending") return <Tag color="processing">Đang chờ</Tag>;
   return <Tag>Chỉ trong ứng dụng</Tag>;
 }
+async function functionErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null && "context" in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      const body = await context.clone().json().catch(() => null) as { error?: string } | null;
+      if (body?.error) return body.error;
+    }
+  }
+  return error instanceof Error ? error.message : "Không gửi được email thử. Hãy kiểm tra cấu hình Gmail API trong Supabase.";
+}
 
 export function PaymentReminderSettings({ organizationId, propertyId, onNotice }: { organizationId: string; propertyId: string; onNotice: (message: string) => void }) {
   const [settings, setSettings] = useState(() => defaults(organizationId, propertyId));
@@ -39,6 +49,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testRecipientEmail, setTestRecipientEmail] = useState("");
   const [form] = Form.useForm<ReminderSettings>();
   const load = useCallback(async () => {
     if (!organizationId || !propertyId) return;
@@ -51,6 +62,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình thông báo. Hãy chạy migration 0019_payment_reminders.sql.");
     const normalized = settingResult.data ? { ...defaults(organizationId, propertyId), ...settingResult.data } as ReminderSettings : defaults(organizationId, propertyId);
     setSettings(normalized); form.setFieldsValue(normalized);
+    setTestRecipientEmail((current) => current || normalized.sender_email);
     setEvents(((historyResult.data ?? []) as ReminderEvent[]).map((event) => ({ ...event, amount: Number(event.amount) })));
     setLoading(false);
   }, [form, onNotice, organizationId, propertyId]);
@@ -69,22 +81,31 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     let values: ReminderSettings;
     try { values = await form.validateFields(); } catch { return; }
     if (!values.sender_email) return onNotice("Hãy nhập email gửi và lưu cấu hình trước.");
+    const recipient = testRecipientEmail.trim();
+    if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(recipient)) return onNotice("Hãy nhập địa chỉ email nhận thử hợp lệ.");
     if (!(await save(values))) return;
     setTesting(true);
-    const { data, error } = await createClient().functions.invoke("payment-reminders", { body: { action: "test", property_id: propertyId } });
+    const { data, error } = await createClient().functions.invoke("payment-reminders", { body: { action: "test", property_id: propertyId, test_recipient_email: recipient } });
     setTesting(false);
-    if (error || data?.error) return onNotice(data?.error || "Không gửi được email thử. Hãy kiểm tra cấu hình Gmail API trong Supabase.");
-    onNotice("Đã gửi email thử đến email tài khoản quản trị.");
+    if (error) return onNotice(await functionErrorMessage(error));
+    if (data?.error) return onNotice(data.error);
+    onNotice("Đã gửi email thử đến " + recipient + ".");
   }
-  const preview = useMemo(() => ({
-    subject: settings.email_subject_template.replaceAll("{{items}}", "Tiền nhà và sinh hoạt").replaceAll("{{due_date}}", "05/10/2026"),
-    body: settings.email_body_template.replaceAll("{{name}}", "Nguyễn Minh Anh").replaceAll("{{items}}", "Tiền nhà và sinh hoạt").replaceAll("{{period}}", "10/2026").replaceAll("{{amount}}", "3.600.000 đ").replaceAll("{{due_date}}", "05/10/2026"),
-  }), [settings.email_body_template, settings.email_subject_template]);
+  const preview = useMemo(() => {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "01";
+    const year = part("year"); const month = part("month"); const day = part("day");
+    const values = {
+      name: "Người nhận thử", items: "Tiền nhà và sinh hoạt", period: `${month}/${year}`, amount: "3.600.000 đ",
+      due_date: new Date(`${year}-${month}-${day}T00:00:00Z`).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }),
+    };
+    const fillTemplate = (template: string) => Object.entries(values).reduce((result, [key, value]) => result.replaceAll("{{" + key + "}}", value), template);
+    return { subject: fillTemplate(settings.email_subject_template), body: fillTemplate(settings.email_body_template) };
+  }, [settings.email_body_template, settings.email_subject_template]);
 
   return <div className="page-stack payment-reminder-settings">
     <Card className="section-card admin-hub-card" title={<div><span>Nhắc hạn thanh toán</span><Typography.Text type="secondary" className="card-title-note">Một email gộp cho mỗi người trong mỗi lần chạy</Typography.Text></div>} extra={<Tag color={settings.enabled ? "success" : "default"}>{settings.enabled ? "Đang bật" : "Đang tắt"}</Tag>}>
       {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : <>
-        <Alert className="reminder-free-note" type="info" showIcon title="Chạy mỗi ngày lúc 08:00 · Múi giờ Việt Nam · Gói miễn phí" description="Tính hạn theo ngày đến hạn của kỳ đối soát. Chỉ nhắc thành viên chưa xác nhận và còn số tiền cần đóng." />
         <Form form={form} layout="vertical" onFinish={(values) => void save(values)} initialValues={settings} onValuesChange={(_, values) => setSettings((current) => ({ ...current, ...values }))}>
           <Row gutter={[16, 12]} className="reminder-top-grid">
             <Col xs={24} lg={12}><Card size="small" title={<Space><ClockCircleOutlined />Lịch nhắc</Space>} className="reminder-subcard">
@@ -100,11 +121,11 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
               <Typography.Text type="secondary" className="reminder-form-hint">Ngày đến hạn tự lùi về ngày cuối tháng nếu tháng đó ngắn hơn ngày đã chọn.</Typography.Text>
             </Card></Col>
             <Col xs={24} lg={12}><Card size="small" title={<Space><MailOutlined />Cấu hình gửi email</Space>} className="reminder-subcard">
-              <Alert type="warning" showIcon title="Gửi qua Gmail API — không cần tên miền riêng." description="Cấu hình OAuth Gmail API trong Supabase Edge Function Secrets. Email gửi bên dưới phải trùng với tài khoản Gmail đã cấp quyền gửi." />
               <Row gutter={12} className="reminder-email-fields">
                 <Col xs={24} sm={12}><Form.Item name="sender_name" label="Tên người gửi" rules={[{ required: true, max: 100 }]}><Input placeholder="708 La Thành" /></Form.Item></Col>
                 <Col xs={24} sm={12}><Form.Item name="sender_email" label="Tài khoản Gmail gửi" rules={[{ required: true, type: "email", message: "Nhập địa chỉ Gmail đã cấp quyền gửi" }]}><Input placeholder="ten.tai.khoan@gmail.com" /></Form.Item></Col>
                 <Col span={24}><Form.Item name="reply_to" label="Email nhận phản hồi" rules={[{ type: "email", message: "Email chưa đúng định dạng" }]}><Input placeholder="quanly@tenmien.vn" /></Form.Item></Col>
+                <Col span={24}><Form.Item label="Gửi email thử đến"><Input type="email" value={testRecipientEmail} onChange={(event) => setTestRecipientEmail(event.target.value)} placeholder="email-ban-muon-nhan@gmail.com" /><Typography.Text type="secondary" className="reminder-form-hint">Chỉ dùng cho email thử; không ảnh hưởng danh sách thành viên nhận nhắc hạn.</Typography.Text></Form.Item></Col>
               </Row>
               <Space wrap><Button icon={<SendOutlined />} onClick={() => void sendTest()} loading={testing} disabled={!settings.sender_email}>Gửi email thử</Button><Button icon={<ReloadOutlined />} onClick={() => void load()}>Tải lại</Button></Space>
             </Card></Col>
@@ -116,7 +137,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
               <Typography.Text type="secondary" className="reminder-form-hint">Biến: <code>{"{{name}}"}</code>, <code>{"{{items}}"}</code>, <code>{"{{period}}"}</code>, <code>{"{{amount}}"}</code>, <code>{"{{due_date}}"}</code>.</Typography.Text>
             </Card></Col>
             <Col xs={24} lg={12}><Card size="small" title="Xem trước email" className="reminder-subcard email-preview-card">
-              <div className="email-preview-from">{settings.sender_name || "708 La Thành"} &lt;{settings.sender_email || "nhacno@tenmien.vn"}&gt;</div><div className="email-preview-subject">{preview.subject}</div><pre className="email-preview-body">{preview.body}</pre>
+              <div className="email-preview-from">Từ: {settings.sender_name || "708 La Thành"} &lt;{settings.sender_email || "ten.tai.khoan@gmail.com"}&gt;</div><div className="email-preview-from">Đến thử: {testRecipientEmail || "nhập email nhận thử ở trên"}</div><div className="email-preview-subject">{preview.subject}</div><pre className="email-preview-body">{preview.body}</pre>
             </Card></Col>
           </Row>
           <Flex justify="flex-end" className="reminder-save-row"><Button type="primary" htmlType="submit" loading={saving}>Lưu cấu hình</Button></Flex>
