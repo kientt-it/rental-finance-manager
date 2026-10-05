@@ -31,9 +31,7 @@ function vietnamToday() {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 async function gmailAccessToken() {
-  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60_000) return cachedAccessToken.value;
   const clientId = Deno.env.get("GMAIL_CLIENT_ID");
   const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
   const refreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN");
@@ -45,7 +43,6 @@ async function gmailAccessToken() {
   });
   const result = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string; error?: string };
   if (!response.ok || !result.access_token) throw new Error(result.error_description || result.error || "Không lấy được quyền truy cập Gmail API. Hãy kiểm tra OAuth credentials và refresh token.");
-  cachedAccessToken = { value: result.access_token, expiresAt: Date.now() + (Number(result.expires_in) || 3600) * 1000 };
   return result.access_token;
 }
 function base64Utf8(value: string) {
