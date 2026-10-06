@@ -8,6 +8,18 @@ Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_set
 
 ## 2. Bật Gmail API và tạo OAuth credentials
 
+Trước khi chuyển sang **In production**, deploy website lên Vercel để ba trang công khai `/about`, `/privacy` và `/terms` có hiệu lực. Mở từng trang trong cửa sổ ẩn danh: trang phải đọc được mà không yêu cầu đăng nhập. Trong **Google Auth Platform → Branding**, nhập tên ứng dụng `708 La Thành`, email hỗ trợ `k2team.club0@gmail.com` và các URL:
+
+| Trường trong Branding | URL |
+| --- | --- |
+| Application home page | `https://708-la-thanh.vercel.app/about` |
+| Application privacy policy link | `https://708-la-thanh.vercel.app/privacy` |
+| Application terms of service link | `https://708-la-thanh.vercel.app/terms` |
+
+Nếu bạn đổi địa chỉ website, thay tên miền trong cả ba URL. Lưu Branding rồi quay lại **Audience → Publish app**. Chuyển trạng thái publish và xác minh OAuth là các bước riêng; thêm các trang này không tự hoàn tất việc xét duyệt của Google. Sau khi chuyển trạng thái, cấp quyền OAuth lại và thay `GMAIL_REFRESH_TOKEN` trong Supabase bằng token mới.
+
+Nội dung các trang mô tả cấu hình Supabase/Gmail hiện tại. Email hỗ trợ và ngày cập nhật đặt trong `lib/public-site.ts`; nội dung ở `app/privacy/page.tsx` và `app/terms/page.tsx`. Cập nhật các trang nếu cách dùng dữ liệu thay đổi.
+
 1. Mở [Google Cloud Console](https://console.cloud.google.com/), tạo project hoặc chọn project hiện có.
 2. Vào **APIs & Services → Library**, tìm **Gmail API** và bấm **Enable**.
 3. Vào **Google Auth Platform** (hoặc **APIs & Services → OAuth consent screen** nếu giao diện cũ), chọn Audience **External**. Điền tên ứng dụng, email hỗ trợ và email liên hệ.

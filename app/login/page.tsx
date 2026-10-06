@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Card, Col, Flex, Form, Input, Row, Space, Typography } from "antd";
 import { CheckCircleFilled, LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
+import publicInfoStyles from "../public-info.module.css";
 
 type LoginValues = { username: string; email?: string; password: string };
 
@@ -148,6 +150,11 @@ export default function LoginPage() {
               </div>
             </Form>
             <div className="auth-trust-note"><SafetyCertificateOutlined /><span>Thông tin đăng nhập được mã hóa và bảo vệ.</span></div>
+            <nav className={publicInfoStyles.loginLinks} aria-label="Thông tin ứng dụng">
+              <Link href="/about">Giới thiệu</Link>
+              <Link href="/privacy">Quyền riêng tư</Link>
+              <Link href="/terms">Điều khoản</Link>
+            </nav>
           </Card>
         </Col>
       </Row>

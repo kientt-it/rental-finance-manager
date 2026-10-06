@@ -4,6 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
+  // Public information remains available without a Supabase session or auth request.
+  if (["/about", "/privacy", "/terms"].includes(request.nextUrl.pathname)) return response;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return response;

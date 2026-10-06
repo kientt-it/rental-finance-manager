@@ -1,0 +1,211 @@
+.shell {
+  min-height: 100dvh;
+  padding: 24px;
+  background: var(--surface-soft);
+  color: var(--ink-950);
+}
+
+.header,
+.main,
+.footer {
+  width: 100%;
+  max-width: 840px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--ink-950);
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.brand :global(.brand-badge) {
+  background: var(--brand-700);
+}
+
+.shell a:focus-visible,
+.loginLinks a:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.signIn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--brand-700);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.signIn:hover {
+  background: var(--brand-100);
+}
+
+.navigation,
+.loginLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.navigation {
+  margin-bottom: 16px;
+}
+
+.navigation a,
+.loginLinks a,
+.footer a,
+.content a {
+  color: var(--brand-700);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  overflow-wrap: anywhere;
+}
+
+.navigation a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.navigation a[aria-current="page"] {
+  color: var(--ink-950);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.article {
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.articleHeader {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.articleHeader h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.articleHeader p {
+  margin: 12px 0 0;
+  color: var(--ink-700);
+  font-size: 16px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.articleHeader .updated {
+  font-size: 14px;
+  color: var(--ink-500);
+}
+
+.content {
+  max-width: 75ch;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.content section {
+  margin-top: 32px;
+}
+
+.content h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.content p {
+  margin: 12px 0 0;
+}
+
+.content ul {
+  margin: 12px 0 0;
+  padding-left: 24px;
+}
+
+.content li + li {
+  margin-top: 8px;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 24px;
+  color: var(--ink-700);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.loginLinks {
+  justify-content: center;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.loginLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+@media (max-width: 600px) {
+  .shell {
+    padding: 16px;
+  }
+
+  .article {
+    padding: 20px;
+  }
+
+  .articleHeader h1 {
+    font-size: 20px;
+  }
+
+  .content section {
+    margin-top: 24px;
+  }
+}
