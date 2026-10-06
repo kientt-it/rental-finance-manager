@@ -183,7 +183,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
             <Col xs={12} sm={8}><Form.Item name={config.beforeDays} label="Nhắc trước hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
             <Col xs={12} sm={8}><Form.Item name={config.afterDays} label="Nhắc quá hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
           </Row>
-          <Form.Item name={config.onDueDate} valuePropName="checked" className="reminder-due-toggle"><Switch /> <Typography.Text>Nhắc đúng ngày đến hạn</Typography.Text></Form.Item>
+          <Form.Item className="reminder-due-toggle"><Form.Item name={config.onDueDate} valuePropName="checked" noStyle><Switch aria-label="Nhắc đúng ngày đến hạn" /></Form.Item> <Typography.Text>Nhắc đúng ngày đến hạn</Typography.Text></Form.Item>
           <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chu kỳ lấy từ cấu hình của từng phòng; lịch này chỉ quyết định ngày gửi trong tháng đến kỳ." : "Chi phí sinh hoạt được xét độc lập vào mỗi tháng."}</Typography.Text>
         </Card></Col>
         <Col xs={24} lg={12}><Card size="small" title={`Template email ${rent ? "tiền phòng" : "sinh hoạt"}`} className="reminder-subcard">
