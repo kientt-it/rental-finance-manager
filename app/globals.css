@@ -2267,6 +2267,14 @@ select {
 .reminder-scope-tabs .ant-tabs-nav { margin-bottom: 16px; }
 .reminder-scope-tabs .ant-tabs-tab { min-height: 42px; }
 .reminder-channel-panel { display: grid; gap: 16px; }
+.payment-reminder-settings .reminder-rent-cycle-card { height: auto; }
+.reminder-rent-cycle-card .reminder-form-hint { margin-bottom: 8px; }
+.reminder-rent-cycle-list { display: grid; }
+.reminder-rent-cycle-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(140px, 180px) auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #e7ede9; }
+.reminder-rent-cycle-row:last-child { border-bottom: 0; }
+.reminder-rent-cycle-room { display: grid; gap: 2px; min-width: 0; }
+.reminder-rent-cycle-room .ant-typography-secondary { font-size: 12px; }
+.reminder-rent-cycle-row .ant-select, .reminder-rent-cycle-row .ant-picker { width: 100%; }
 .reminder-channel-preview { min-height: 0; }
 .email-preview-card .ant-card-body { min-height: 275px; padding: 18px; background: #f6f8f7; }
 .email-preview-from { color: #607169; font-size: 12px; }
@@ -2286,6 +2294,8 @@ select {
   .payment-reminder-settings .reminder-number-row .ant-form-item-label { min-height: 42px; }
   .reminder-scope-tabs .ant-tabs-nav-list { min-width: max-content; }
   .reminder-scope-tabs .ant-tabs-tab { padding-inline: 4px; }
+  .reminder-rent-cycle-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .reminder-rent-cycle-room, .reminder-rent-cycle-row > .ant-btn { grid-column: 1 / -1; }
   .reminder-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .reminder-history-person { grid-column: 1 / -1; }
   .reminder-history-info { grid-column: 1; }

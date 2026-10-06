@@ -46,7 +46,6 @@ import {
   PlusOutlined,
   QrcodeOutlined,
   SearchOutlined,
-  SettingOutlined,
   TeamOutlined,
   UserAddOutlined,
   UploadOutlined,
@@ -57,12 +56,6 @@ import { formatMoneyInput } from "@/lib/money";
 import { financialPeriodEnd, financialPeriodShortLabel, type FinancialPeriod } from "@/lib/financial-periods";
 
 const vnd = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
-const rentCycleOptions = [
-  { value: 1, label: "Hàng tháng" },
-  { value: 3, label: "3 tháng/lần" },
-  { value: 6, label: "6 tháng/lần" },
-  { value: 12, label: "12 tháng/lần" },
-];
 type SummaryTone = "neutral" | "green" | "blue" | "orange" | "danger";
 
 function rentCycleStatus(startMonth: string, cycleMonths: number, periodStart: string) {
@@ -117,12 +110,8 @@ type RoomFormValues = {
   coefficient: string;
   member_ids: string[];
   base_rent: string;
-  rent_billing_cycle_months: number;
-  rent_cycle_start_month: Dayjs;
   status: RentalRoom["status"];
 };
-
-type RentCycleFormValues = Pick<RoomFormValues, "rent_billing_cycle_months" | "rent_cycle_start_month">;
 
 type ExpenseParticipant = { member_id: string; allocated_amount: number };
 type ExpenseRecord = {
@@ -190,12 +179,9 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RentalRoom | null>(null);
-  const [rentConfigRoom, setRentConfigRoom] = useState<RentalRoom | null>(null);
   const [saving, setSaving] = useState(false);
-  const [savingRentConfig, setSavingRentConfig] = useState(false);
   const [savingSettlementKey, setSavingSettlementKey] = useState<string | null>(null);
   const [form] = Form.useForm<RoomFormValues>();
-  const [rentConfigForm] = Form.useForm<RentCycleFormValues>();
 
   const loadRooms = useCallback(async () => {
     if (!propertyId) return;
@@ -230,7 +216,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
 
   function openCreate() {
     setEditingRoom(null);
-    form.setFieldsValue({ code: "", floor: 1, room_type: "Phòng tiêu chuẩn", coefficient: "1", member_ids: [], base_rent: "", rent_billing_cycle_months: 1, rent_cycle_start_month: dayjs(periodStart).startOf("month"), status: "vacant" });
+    form.setFieldsValue({ code: "", floor: 1, room_type: "Phòng tiêu chuẩn", coefficient: "1", member_ids: [], base_rent: "", status: "vacant" });
     setModalOpen(true);
   }
 
@@ -243,8 +229,6 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
       coefficient: String(room.coefficient),
       member_ids: room.member_ids,
       base_rent: room.base_rent.toLocaleString("vi-VN"),
-      rent_billing_cycle_months: room.rent_billing_cycle_months,
-      rent_cycle_start_month: dayjs(room.rent_cycle_start_month),
       status: room.status,
     });
     setModalOpen(true);
@@ -261,8 +245,6 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
       coefficient: Number(values.coefficient.replace(",", ".")),
       residents,
       base_rent: parseMoney(values.base_rent),
-      rent_billing_cycle_months: values.rent_billing_cycle_months,
-      rent_cycle_start_month: values.rent_cycle_start_month.startOf("month").format("YYYY-MM-DD"),
       status: values.member_ids.length
         ? (values.status === "vacant" ? "occupied" : values.status)
         : (values.status === "occupied" ? "vacant" : values.status),
@@ -293,28 +275,6 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
     const { error } = await createClient().from("rooms").delete().eq("id", room.id);
     if (error) return onNotice("Không thể xóa phòng đang có hợp đồng hoặc hóa đơn liên quan.");
     onNotice(`Đã xóa phòng ${room.code}.`);
-    await loadRooms();
-  }
-
-  function openRentConfig(room: RentalRoom) {
-    setRentConfigRoom(room);
-    rentConfigForm.setFieldsValue({
-      rent_billing_cycle_months: room.rent_billing_cycle_months,
-      rent_cycle_start_month: dayjs(room.rent_cycle_start_month),
-    });
-  }
-
-  async function saveRentConfig(values: RentCycleFormValues) {
-    if (!rentConfigRoom || !canManageRent) return;
-    setSavingRentConfig(true);
-    const { error } = await createClient().from("rooms").update({
-      rent_billing_cycle_months: values.rent_billing_cycle_months,
-      rent_cycle_start_month: values.rent_cycle_start_month.startOf("month").format("YYYY-MM-DD"),
-    }).eq("id", rentConfigRoom.id);
-    setSavingRentConfig(false);
-    if (error) return onNotice("Không thể lưu chu kỳ tiền phòng. Hãy kiểm tra migration 0021.");
-    onNotice(`Đã cập nhật chu kỳ đóng tiền phòng ${rentConfigRoom.code}.`);
-    setRentConfigRoom(null);
     await loadRooms();
   }
 
@@ -358,7 +318,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
           {floors.map((floor) => (
             <section className="floor-line" key={floor}>
               <div className="floor-number"><Typography.Text>TẦNG</Typography.Text><strong>{floor}</strong></div>
-              <div className="floor-rooms">{rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.id} room={room} users={users} currentMemberId={currentMemberId} compact canManage={canManage} canManageRent={canManageRent} financialPeriod={financialPeriod} periodStart={periodStart} rentSettlements={rentSettlements} savingSettlementKey={savingSettlementKey} onToggleRentSettlement={toggleRentSettlement} onConfigureRent={() => openRentConfig(room)} onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} />)}</div>
+              <div className="floor-rooms">{rooms.filter((room) => room.floor === floor).map((room) => <RoomCard key={room.id} room={room} users={users} currentMemberId={currentMemberId} compact canManage={canManage} canManageRent={canManageRent} financialPeriod={financialPeriod} periodStart={periodStart} rentSettlements={rentSettlements} savingSettlementKey={savingSettlementKey} onToggleRentSettlement={toggleRentSettlement} onEdit={() => openEdit(room)} onDelete={() => void deleteRoom(room)} />)}</div>
             </section>
           ))}
         </div>
@@ -381,26 +341,15 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
             <Select mode="multiple" allowClear optionFilterProp="label" placeholder="Chọn thành viên" options={chargeableMembers(users).map((user) => ({ value: user.user_id, label: user.full_name }))} />
           </Form.Item>
           <Form.Item name="base_rent" label="Giá thuê tháng (VNĐ)" normalize={(value) => formatMoneyInput(String(value ?? ""))} rules={[{ required: true }]}><Input inputMode="numeric" placeholder="3.500.000" /></Form.Item>
-          <Row gutter={12}>
-            <Col xs={24} sm={12}><Form.Item name="rent_billing_cycle_months" label="Chu kỳ đóng tiền" rules={[{ required: true }]}><Select options={rentCycleOptions} /></Form.Item></Col>
-            <Col xs={24} sm={12}><Form.Item name="rent_cycle_start_month" label="Tháng bắt đầu chu kỳ" rules={[{ required: true }]}><DatePicker picker="month" format="MM/YYYY" allowClear={false} style={{ width: "100%" }} /></Form.Item></Col>
-          </Row>
           <Button type="primary" htmlType="submit" loading={saving} block>{editingRoom ? "Lưu thay đổi" : "Thêm phòng"}</Button>
         </Form>
       </Modal>
 
-      <Modal title={rentConfigRoom ? `Chu kỳ tiền phòng ${rentConfigRoom.code}` : "Chu kỳ tiền phòng"} open={Boolean(rentConfigRoom)} onCancel={() => setRentConfigRoom(null)} footer={null} forceRender>
-        <Form form={rentConfigForm} layout="vertical" onFinish={(values) => void saveRentConfig(values)}>
-          <Form.Item name="rent_billing_cycle_months" label="Chu kỳ đóng tiền" extra="Số tiền đến kỳ = giá thuê tháng × số tháng, sau đó chia đều cho người đang ở." rules={[{ required: true }]}><Select options={rentCycleOptions} /></Form.Item>
-          <Form.Item name="rent_cycle_start_month" label="Tháng bắt đầu chu kỳ" extra="Đây là tháng đầu tiên phát sinh khoản phải đóng theo chu kỳ." rules={[{ required: true }]}><DatePicker picker="month" format="MM/YYYY" allowClear={false} style={{ width: "100%" }} /></Form.Item>
-          <Button type="primary" htmlType="submit" loading={savingRentConfig} block>Lưu chu kỳ</Button>
-        </Form>
-      </Modal>
     </div>
   );
 }
 
-function RoomCard({ room, users, currentMemberId, compact = false, canManage = false, canManageRent = false, financialPeriod, periodStart, rentSettlements, savingSettlementKey, onToggleRentSettlement, onConfigureRent, onEdit, onDelete }: {
+function RoomCard({ room, users, currentMemberId, compact = false, canManage = false, canManageRent = false, financialPeriod, periodStart, rentSettlements, savingSettlementKey, onToggleRentSettlement, onEdit, onDelete }: {
   room: RentalRoom;
   users: OrganizationUser[];
   currentMemberId: string | null;
@@ -412,7 +361,6 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
   rentSettlements: Record<string, boolean>;
   savingSettlementKey: string | null;
   onToggleRentSettlement: (room: RentalRoom, memberId: string, memberName: string, isSettled: boolean) => Promise<void>;
-  onConfigureRent: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -429,9 +377,6 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
         <Tag color="gold">Tầng {room.floor}</Tag>
         <Space size={2}>
           <Tag color={statusColor}>{statusLabel}</Tag>
-          {canManageRent && <Tooltip title="Cấu hình chu kỳ đóng tiền">
-            <Button className="room-action-button" type="text" icon={<SettingOutlined />} onClick={onConfigureRent} aria-label={`Cấu hình chu kỳ tiền phòng ${room.code}`}>Chu kỳ</Button>
-          </Tooltip>}
           {canManage && <Tooltip title="Chỉnh sửa phòng">
             <Button className="room-action-button" type="text" icon={<EditOutlined />} onClick={onEdit} aria-label={`Chỉnh sửa ${room.code}`}>Sửa</Button>
           </Tooltip>}
@@ -462,7 +407,7 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
       </div>
       <Flex justify="space-between" className="room-card-meta">
         <Typography.Text type="secondary">Hệ số <b>{room.coefficient}</b></Typography.Text>
-        <Typography.Text type="secondary">Mỗi người / kỳ <b>{cycle.isDue && room.member_ids.length ? vnd.format(shareAmount) : "—"}</b></Typography.Text>
+        <Typography.Text type="secondary">Tổng / kỳ <b>{vnd.format(cycleRent)}</b></Typography.Text>
       </Flex>
     </Card>
   );

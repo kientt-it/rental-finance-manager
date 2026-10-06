@@ -702,6 +702,7 @@ function AdminManagementView({
   onNotice: (message: string) => void;
   onMembersChanged: () => void;
 }) {
+  const [rentCycleRevision, setRentCycleRevision] = useState(0);
   const periodMonthStart = periodMonth.startOf("month").format("YYYY-MM-DD");
   const periodAlreadyExists = periods.some((period) => period.period_start === periodMonthStart);
   const periodManagement = (
@@ -762,10 +763,10 @@ function AdminManagementView({
         defaultActiveKey="periods"
         items={[
           { key: "periods", label: <Space><CalendarOutlined />Kỳ tài chính</Space>, children: periodManagement },
-          { key: "rooms", label: <Space><HomeOutlined />Phòng</Space>, children: <RoomsView organizationId={organizationId} propertyId={propertyId} users={users} onNotice={onNotice} canManage financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} /> },
+          { key: "rooms", label: <Space><HomeOutlined />Phòng</Space>, children: <RoomsView key={rentCycleRevision} organizationId={organizationId} propertyId={propertyId} users={users} onNotice={onNotice} canManage financialPeriod={selectedPeriod} periodStart={selectedPeriodStart} /> },
           { key: "members", label: <Space><TeamOutlined />Thành viên</Space>, children: <MembersView users={users} currentUserEmail={currentUserEmail} onNotice={onNotice} onChanged={onMembersChanged} /> },
           { key: "qr", label: <Space><QrcodeOutlined />Mã QR</Space>, children: <PaymentQrManagement organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
-          { key: "notifications", label: <Space><CalendarOutlined />Thông báo</Space>, children: <PaymentReminderSettings organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
+          { key: "notifications", label: <Space><CalendarOutlined />Thông báo</Space>, children: <PaymentReminderSettings organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} onRentCyclesChanged={() => setRentCycleRevision((revision) => revision + 1)} /> },
           { key: "support", label: <Space><SettingOutlined />Hỗ trợ</Space>, children: <SupportSettingsManagement organizationId={organizationId} propertyId={propertyId} onNotice={onNotice} /> },
         ]}
       />

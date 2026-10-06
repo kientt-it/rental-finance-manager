@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import dayjs from "dayjs";
-import { Badge, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
+import { Badge, Button, Card, Col, DatePicker, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
 import { BellOutlined, CheckOutlined, ClockCircleOutlined, HomeOutlined, MailOutlined, ReloadOutlined, SendOutlined, WalletOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -23,6 +23,13 @@ type ReminderEvent = {
   reminder_type: "before" | "due" | "overdue"; in_app_enabled: boolean; email_status: "pending" | "sent" | "failed" | "skipped";
   reminder_scope: ReminderEventScope; email_error: string | null; read_at: string | null; created_at: string;
 };
+type RentCycleRoom = { id: string; code: string; base_rent: number; rent_billing_cycle_months: number; rent_cycle_start_month: string };
+const rentCycleOptions = [
+  { value: 1, label: "Hàng tháng" },
+  { value: 3, label: "3 tháng/lần" },
+  { value: 6, label: "6 tháng/lần" },
+  { value: 12, label: "12 tháng/lần" },
+];
 const defaults = (organization_id: string, property_id: string): ReminderSettings => ({
   organization_id, property_id, enabled: false, email_enabled: false, in_app_enabled: true, settlement_due_day: 5,
   reminder_before_days: 3, reminder_on_due_date: true, reminder_after_days: 3, sender_name: "708 La Thành",
@@ -53,7 +60,7 @@ async function functionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Không gửi được email thử. Hãy kiểm tra cấu hình Gmail API trong Supabase.";
 }
 
-export function PaymentReminderSettings({ organizationId, propertyId, onNotice }: { organizationId: string; propertyId: string; onNotice: (message: string) => void }) {
+export function PaymentReminderSettings({ organizationId, propertyId, onNotice, onRentCyclesChanged }: { organizationId: string; propertyId: string; onNotice: (message: string) => void; onRentCyclesChanged?: () => void }) {
   const [settings, setSettings] = useState(() => defaults(organizationId, propertyId));
   const [events, setEvents] = useState<ReminderEvent[]>([]);
   const [activeScope, setActiveScope] = useState<ReminderScope>("living_expense");
@@ -61,20 +68,28 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
   const [saving, setSaving] = useState(false);
   const [testingScope, setTestingScope] = useState<ReminderScope | null>(null);
   const [testRecipientEmail, setTestRecipientEmail] = useState("");
+  const [rentRooms, setRentRooms] = useState<RentCycleRoom[]>([]);
+  const [rentCycleDrafts, setRentCycleDrafts] = useState<Record<string, { months: number; startMonth: Dayjs | null }>>({});
+  const [savingRentCycleId, setSavingRentCycleId] = useState<string | null>(null);
   const [form] = Form.useForm<ReminderSettings>();
   const load = useCallback(async () => {
     if (!organizationId || !propertyId) return;
     setLoading(true);
     const supabase = createClient();
-    const [settingResult, historyResult] = await Promise.all([
+    const [settingResult, historyResult, roomResult] = await Promise.all([
       supabase.from("payment_reminder_settings").select("*").eq("property_id", propertyId).maybeSingle(),
       supabase.from("payment_reminder_events").select(fields).eq("property_id", propertyId).order("created_at", { ascending: false }).limit(10),
+      supabase.from("rooms").select("id, code, base_rent, rent_billing_cycle_months, rent_cycle_start_month").eq("property_id", propertyId).order("code"),
     ]);
     if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình thông báo. Hãy chạy migration 0022_split_rent_and_living_reminders.sql.");
+    if (roomResult.error) onNotice("Không tải được chu kỳ tiền phòng. Hãy kiểm tra migration 0021_room_rent_billing_cycles.sql.");
     const normalized = settingResult.data ? { ...defaults(organizationId, propertyId), ...settingResult.data } as ReminderSettings : defaults(organizationId, propertyId);
     setSettings(normalized); form.setFieldsValue(normalized);
     setTestRecipientEmail((current) => current || normalized.sender_email);
     setEvents(((historyResult.data ?? []) as ReminderEvent[]).map((event) => ({ ...event, reminder_scope: event.reminder_scope || "living_expense", amount: Number(event.amount) })));
+    const normalizedRooms = ((roomResult.data ?? []) as RentCycleRoom[]).map((room) => ({ ...room, base_rent: Number(room.base_rent), rent_billing_cycle_months: Number(room.rent_billing_cycle_months || 1) }));
+    setRentRooms(normalizedRooms);
+    setRentCycleDrafts(Object.fromEntries(normalizedRooms.map((room) => [room.id, { months: room.rent_billing_cycle_months, startMonth: dayjs(room.rent_cycle_start_month).startOf("month") }])));
     setLoading(false);
   }, [form, onNotice, organizationId, propertyId]);
   useEffect(() => { void load(); }, [load]);
@@ -101,6 +116,21 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     if (error) return onNotice(await functionErrorMessage(error));
     if (data?.error) return onNotice(data.error);
     onNotice(`Đã gửi thử email ${scopeLabel(scope).toLowerCase()} đến ${recipient}.`);
+  }
+  async function saveRentCycle(room: RentCycleRoom) {
+    const draft = rentCycleDrafts[room.id];
+    if (!draft?.startMonth) return onNotice("Hãy chọn tháng bắt đầu chu kỳ.");
+    setSavingRentCycleId(room.id);
+    const { data, error } = await createClient().from("rooms").update({
+      rent_billing_cycle_months: draft.months,
+      rent_cycle_start_month: draft.startMonth.startOf("month").format("YYYY-MM-DD"),
+    }).eq("id", room.id).eq("property_id", propertyId).select("id").maybeSingle();
+    setSavingRentCycleId(null);
+    if (error || !data) return onNotice("Không thể lưu chu kỳ tiền phòng. Hãy kiểm tra quyền quản trị và migration 0021.");
+    const updatedRoom = { ...room, rent_billing_cycle_months: draft.months, rent_cycle_start_month: draft.startMonth.startOf("month").format("YYYY-MM-DD") };
+    setRentRooms((current) => current.map((item) => item.id === room.id ? updatedRoom : item));
+    onRentCyclesChanged?.();
+    onNotice(`Đã cập nhật chu kỳ tiền phòng ${room.code}.`);
   }
   const previews = useMemo(() => {
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -130,6 +160,19 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
     const enabled = Boolean(settings[config.enabled]);
     const preview = previews[scope];
     return <div className="reminder-channel-panel">
+      {rent && <Card size="small" title="Chu kỳ tiền phòng theo phòng" className="reminder-subcard reminder-rent-cycle-card">
+        <Typography.Text type="secondary" className="reminder-form-hint">Cấu hình chu kỳ và tháng bắt đầu tại đây. Tab Phòng chỉ hiển thị kỳ thu, không chỉnh sửa chu kỳ.</Typography.Text>
+        {rentRooms.length ? <div className="reminder-rent-cycle-list">{rentRooms.map((room) => {
+          const draft = rentCycleDrafts[room.id];
+          const changed = Boolean(draft && (draft.months !== room.rent_billing_cycle_months || !draft.startMonth?.isSame(dayjs(room.rent_cycle_start_month), "month")));
+          return <div className="reminder-rent-cycle-row" key={room.id}>
+            <div className="reminder-rent-cycle-room"><Typography.Text strong>{room.code}</Typography.Text><Typography.Text type="secondary">{vnd.format(room.base_rent)} / tháng</Typography.Text></div>
+            <Select aria-label={`Chu kỳ đóng tiền phòng ${room.code}`} value={draft?.months} options={rentCycleOptions} onChange={(months) => setRentCycleDrafts((current) => ({ ...current, [room.id]: { ...current[room.id], months } }))} />
+            <DatePicker aria-label={`Tháng bắt đầu chu kỳ phòng ${room.code}`} picker="month" format="MM/YYYY" allowClear={false} value={draft?.startMonth} onChange={(startMonth) => setRentCycleDrafts((current) => ({ ...current, [room.id]: { ...current[room.id], startMonth } }))} />
+            <Button type="primary" aria-label={`Lưu chu kỳ tiền phòng ${room.code}`} disabled={!changed} loading={savingRentCycleId === room.id} onClick={() => void saveRentCycle(room)}>Lưu</Button>
+          </div>;
+        })}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có phòng để cấu hình chu kỳ." />}
+      </Card>}
       <Row gutter={[16, 12]}>
         <Col xs={24} lg={12}><Card size="small" title={<Space><ClockCircleOutlined />Lịch nhắc {rent ? "tiền phòng" : "sinh hoạt"}</Space>} className="reminder-subcard">
           <div className="reminder-setting-row"><div><Typography.Text strong>Bật nhắc {rent ? "tiền phòng" : "chi phí sinh hoạt"}</Typography.Text><Typography.Text type="secondary">{rent ? "Chỉ chạy ở tháng đến kỳ của từng phòng" : "Chạy riêng mỗi tháng, không gộp tiền phòng"}</Typography.Text></div><Form.Item name={config.enabled} valuePropName="checked" noStyle><Switch aria-label={`Bật nhắc ${scopeLabel(scope).toLowerCase()}`} /></Form.Item></div>
@@ -141,7 +184,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice }
             <Col xs={12} sm={8}><Form.Item name={config.afterDays} label="Nhắc quá hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
           </Row>
           <Form.Item name={config.onDueDate} valuePropName="checked" className="reminder-due-toggle"><Switch /> <Typography.Text>Nhắc đúng ngày đến hạn</Typography.Text></Form.Item>
-          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chu kỳ 3 tháng được lấy từ cấu hình của từng phòng; lịch này chỉ quyết định ngày gửi trong tháng đến kỳ." : "Chi phí sinh hoạt được xét độc lập vào mỗi tháng."}</Typography.Text>
+          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chu kỳ lấy từ cấu hình của từng phòng; lịch này chỉ quyết định ngày gửi trong tháng đến kỳ." : "Chi phí sinh hoạt được xét độc lập vào mỗi tháng."}</Typography.Text>
         </Card></Col>
         <Col xs={24} lg={12}><Card size="small" title={`Template email ${rent ? "tiền phòng" : "sinh hoạt"}`} className="reminder-subcard">
           <Form.Item name={config.subject} label="Tiêu đề email" rules={[{ required: true, max: 180 }]}><Input maxLength={180} /></Form.Item>
