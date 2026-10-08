@@ -1,0 +1,281 @@
+html.dark {
+  color-scheme: dark;
+  --ink-950: #eaf4ed;
+  --ink-700: #c5d8cb;
+  --ink-500: #abc1b2;
+  --brand-700: #83e4b5;
+  --brand-600: #65d6a3;
+  --brand-100: rgba(101, 214, 163, 0.14);
+  --page-bg: #0b1510;
+  --surface: #15231b;
+  --surface-soft: #101d16;
+  --line: rgba(210, 239, 221, 0.16);
+  --shadow-soft: 0 16px 40px rgba(0, 0, 0, 0.3);
+}
+
+.dark body,
+.dark .dashboard-layout,
+.dark .auth-shell,
+.dark .auth-form-column,
+.dark .app-boot {
+  background: var(--page-bg);
+  color: var(--ink-950);
+}
+
+.dark .app-boot::after {
+  border-color: var(--line);
+  border-top-color: var(--brand-600);
+}
+
+.dark .desktop-sider,
+.dark .mobile-drawer .ant-drawer-content {
+  border-color: var(--line);
+  background: var(--surface) !important;
+  box-shadow: 10px 0 40px rgba(0, 0, 0, 0.22);
+}
+
+.dark .sider-account .admin-role-tag {
+  background: #ffffff !important;
+  color: #086b4d !important;
+  border: 1px solid #d7e6de;
+}
+
+.dark .app-brand,
+.dark .online-presence-count,
+.dark .personal-cashflow-card .ant-statistic-content,
+.dark .personal-qr-action > div .ant-typography:last-child,
+.dark .collection-progress,
+.dark .email-preview-body,
+.dark .notification-item {
+  color: var(--ink-950);
+}
+
+.dark .brand-badge.inverse {
+  background: var(--surface);
+  color: var(--brand-700);
+}
+
+.dark .brand-badge:not(.inverse) {
+  background: #086b4d !important;
+  color: #ffffff;
+}
+
+.dark .main-menu .ant-menu-item:not(.ant-menu-item-selected):hover,
+.dark .notification-item:hover,
+.dark .online-presence:hover {
+  background: rgba(232, 255, 239, 0.08) !important;
+}
+
+.dark .dashboard-content .ant-typography-secondary,
+.dark .page-subtitle,
+.dark .spending-delta span,
+.dark .personal-expense-header,
+.dark .room-rent span,
+.dark .utility-card .ant-card-body,
+.dark .utility-card .anticon,
+.dark .utility-card span,
+.dark .email-preview-from,
+.dark .notification-item-meta,
+.dark .auth-card .ant-typography-secondary,
+.dark .form-eyebrow,
+.dark .auth-divider,
+.dark .auth-trust-note {
+  color: var(--ink-500) !important;
+}
+
+.dark .spending-delta,
+.dark .admin-qr-info,
+.dark .qr-payment-info,
+.dark .period-create-row,
+.dark .personal-expense-header,
+.dark .room-rent-not-due,
+.dark .utility-card,
+.dark .table-toolbar,
+.dark .collection-progress,
+.dark .email-preview-card .ant-card-body {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+.dark .spending-delta.increase {
+  background: rgba(240, 184, 107, 0.12);
+}
+
+.dark .spending-delta strong,
+.dark .personal-qr-icon,
+.dark .quick-icon,
+.dark .resident-list .ant-tag,
+.dark .room-rent-member-person .ant-avatar,
+.dark .online-presence > .anticon,
+.dark .collection-rate {
+  color: var(--brand-700);
+}
+
+.dark .spending-delta.increase strong {
+  color: #f0b86b;
+}
+
+.dark .spending-bar-track {
+  background: rgba(232, 255, 239, 0.09);
+}
+
+.dark .spending-bar-track .current {
+  background: linear-gradient(90deg, #43bb86, #83e4b5);
+}
+
+.dark .period-manager-item,
+.dark .participant-grid .ant-checkbox-wrapper,
+.dark .donate-qr-frame,
+.dark .payment-qr-frame,
+.dark .email-preview-body {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.dark .period-manager-item.selected,
+.dark .participant-grid .ant-checkbox-wrapper:has(.ant-checkbox-checked) {
+  border-color: rgba(101, 214, 163, 0.55);
+  background: rgba(101, 214, 163, 0.1);
+}
+
+.dark .period-manager-item.selected {
+  box-shadow: inset 3px 0 var(--brand-600);
+}
+
+.dark .period-switcher .ant-select-selector,
+.dark .auth-card .ant-input-affix-wrapper {
+  border-color: var(--line) !important;
+  background: var(--surface) !important;
+}
+
+.dark .auth-card .ant-input::placeholder {
+  color: #a9c1b1;
+}
+
+.auth-card .ant-input-password-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.dark .summary-card {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.dark .summary-card:hover,
+.dark .quick-card:not(.disabled):hover {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.dark .section-card .ant-card-head {
+  border-bottom-color: var(--line);
+  background: var(--surface);
+}
+
+.dark .rental-card,
+.dark .room-rent-member-list,
+.dark .reminder-setting-row,
+.dark .reminder-rent-cycle-row,
+.dark .reminder-history-row,
+.dark .notification-item,
+.dark .payment-reminder-settings .reminder-subcard {
+  border-color: var(--line);
+}
+
+.dark .resident-list .ant-tag,
+.dark .room-rent-member-person .ant-avatar,
+.dark .personal-qr-icon,
+.dark .quick-icon,
+.dark .metric-icon.green,
+.dark .participant-more {
+  background: rgba(101, 214, 163, 0.14);
+}
+
+.dark .qr-content .ant-statistic-content {
+  color: var(--brand-700);
+}
+
+.dark .metric-icon.green { color: #83e4b5; }
+.dark .metric-icon.neutral { background: rgba(232, 255, 239, 0.09); color: #c0d5c6; }
+.dark .metric-icon.orange { background: rgba(240, 184, 107, 0.14); color: #f0b86b; }
+.dark .metric-icon.blue { background: rgba(109, 178, 234, 0.14); color: #8ec5f2; }
+.dark .metric-icon.purple { background: rgba(176, 149, 238, 0.14); color: #c1a9f4; }
+.dark .metric-icon.danger { background: rgba(237, 129, 121, 0.14); color: #ed8179; }
+
+.dark .online-presence,
+.dark .notification-center-trigger,
+.dark .theme-trigger {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink-700);
+}
+
+.dark .notification-center-trigger:hover,
+.dark .theme-trigger:hover {
+  background: rgba(232, 255, 239, 0.08) !important;
+  color: var(--brand-700) !important;
+}
+
+.dark .online-user-avatar {
+  background: rgba(101, 214, 163, 0.15);
+  color: var(--brand-700);
+}
+
+.dark .notification-unread-dot {
+  background: var(--brand-600);
+}
+
+.dark .room-delete-button:hover {
+  background: rgba(237, 129, 121, 0.14) !important;
+  color: #ed8179 !important;
+}
+
+.dark .auth-form-column::before,
+.dark .auth-form-column::after {
+  opacity: 0.35;
+}
+
+.dark .auth-card {
+  border-color: var(--line);
+  box-shadow: 0 24px 65px rgba(0, 0, 0, 0.32);
+}
+
+.dark .auth-google-button {
+  border-color: var(--line);
+  color: var(--ink-950);
+  box-shadow: none;
+}
+
+.dark .auth-google-button:hover {
+  border-color: rgba(101, 214, 163, 0.5) !important;
+  background: rgba(232, 255, 239, 0.07) !important;
+  color: var(--ink-950) !important;
+}
+
+.dark .auth-divider::after {
+  background: var(--line);
+}
+
+.dark .email-preview-body {
+  color: var(--ink-950);
+}
+
+@media (max-width: 767px) {
+  .dark .expense-mobile-amount,
+  .dark .expense-mobile-total,
+  .dark .people-cost-mobile-money > span,
+  .dark .people-cost-mobile-money .people-cost-mobile-balance {
+    background: rgba(232, 255, 239, 0.07);
+  }
+
+  .dark .expense-mobile-amount .ant-typography-strong {
+    color: var(--brand-700);
+  }
+
+  .dark .expense-mobile-actions {
+    border-color: var(--line);
+  }
+}

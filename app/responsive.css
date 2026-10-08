@@ -859,6 +859,13 @@ body {
 
   .header-actions {
     display: inline-flex !important;
+    margin-left: auto;
+    column-gap: 4px !important;
+  }
+
+  .page-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
   .page-header h2.ant-typography {

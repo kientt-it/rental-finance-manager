@@ -22,6 +22,7 @@ import {
   Layout,
   Menu,
   Modal,
+  Popover,
   Popconfirm,
   Row,
   Select,
@@ -35,6 +36,7 @@ import {
 import {
   BankOutlined,
   CalendarOutlined,
+  CheckOutlined,
   CreditCardOutlined,
   CopyOutlined,
   DashboardOutlined,
@@ -44,10 +46,12 @@ import {
   HomeOutlined,
   LogoutOutlined,
   MenuOutlined,
+  MoonOutlined,
   MoreOutlined,
   PlusOutlined,
   QrcodeOutlined,
   SettingOutlined,
+  SunOutlined,
   TeamOutlined,
   UnlockOutlined,
   UserOutlined,
@@ -59,6 +63,7 @@ import { createPeriodXlsx, downloadPeriodXlsx } from "@/lib/period-xlsx";
 import { ExpensesView, MembersView, PaymentQrManagement, PeopleCostsView, ReportView, RoomsView, type OrganizationUser } from "./management-views";
 import SupportFloatingActions, { SupportSettingsManagement } from "./support-floating-actions";
 import { NotificationCenter, PaymentReminderSettings } from "./payment-reminders";
+import { useAppTheme } from "./antd-provider";
 
 type DashboardData = { organization_id: string; property_id: string; property_name: string };
 type AccountProfileForm = { username: string; full_name: string; phone?: string; bank_account?: string; bank_name?: string; new_password?: string; confirm_password?: string };
@@ -111,10 +116,11 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const [selectedPeriodStart, setSelectedPeriodStart] = useState(currentPeriodStart);
   const [periodMonth, setPeriodMonth] = useState(() => dayjs(currentPeriodStart()));
   const [periodSaving, setPeriodSaving] = useState(false);
-  const [onlineUserCount, setOnlineUserCount] = useState<number | null>(null);
+  const [onlineUserIds, setOnlineUserIds] = useState<string[] | null>(null);
   const periodSelectionReady = useRef(false);
   const screens = Grid.useBreakpoint();
   const { message, modal } = App.useApp();
+  const { mode: themeMode, resolvedTheme, setMode: setThemeMode } = useAppTheme();
   const notify = useCallback((content: string) => {
     message.success({ content });
   }, [message]);
@@ -209,7 +215,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   useEffect(() => { void loadFinancialPeriods(); }, [loadFinancialPeriods]);
   useEffect(() => {
     if (!data.organization_id) {
-      setOnlineUserCount(null);
+      setOnlineUserIds(null);
       return;
     }
 
@@ -217,7 +223,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     const channel = supabase.channel(`presence:organization:${data.organization_id}`, {
       config: { presence: { key: userId } },
     });
-    const updateOnlineUserCount = () => {
+    const updateOnlineUsers = () => {
       const presenceState = channel.presenceState<{ user_id?: string }>();
       const onlineUserIds = new Set(
         Object.values(presenceState)
@@ -225,17 +231,17 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
           .map((presence) => presence.user_id)
           .filter((presenceUserId): presenceUserId is string => Boolean(presenceUserId)),
       );
-      setOnlineUserCount(onlineUserIds.size);
+      setOnlineUserIds(Array.from(onlineUserIds));
     };
 
     channel
-      .on("presence", { event: "sync" }, updateOnlineUserCount)
-      .on("presence", { event: "join" }, updateOnlineUserCount)
-      .on("presence", { event: "leave" }, updateOnlineUserCount)
+      .on("presence", { event: "sync" }, updateOnlineUsers)
+      .on("presence", { event: "join" }, updateOnlineUsers)
+      .on("presence", { event: "leave" }, updateOnlineUsers)
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await channel.track({ user_id: userId });
-          updateOnlineUserCount();
+          updateOnlineUsers();
         }
       });
 
@@ -259,6 +265,17 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   );
   const displayName = currentMember?.full_name || userName || userEmail.split("@")[0] || "Chủ trọ";
   const initials = displayName.split(" ").filter(Boolean).slice(-2).map((part) => part[0]).join("").toUpperCase();
+  const onlineUserCount = onlineUserIds?.length ?? null;
+  const onlineUsers = (onlineUserIds ?? []).map((onlineId) => {
+    const member = organizationUsers.find((user) => user.auth_user_id === onlineId);
+    const isCurrentUser = onlineId === userId;
+    return {
+      id: onlineId,
+      name: member?.full_name || (isCurrentUser ? displayName : "Thành viên"),
+      role: member?.role ?? (isCurrentUser ? currentRole : "member"),
+      isCurrentUser,
+    };
+  });
   const selectedPeriod = periods.find((period) => period.period_start === selectedPeriodStart) ?? null;
   const periodLabel = financialPeriodLabel(selectedPeriodStart);
   const periodOptions = useMemo(() => {
@@ -501,6 +518,17 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
     </div>
   );
 
+  const themeMenu = {
+    items: [
+      { key: "system", label: <>Theo hệ thống {themeMode === "system" && <CheckOutlined className="theme-option-check" />}</> },
+      { key: "light", label: <>Sáng {themeMode === "light" && <CheckOutlined className="theme-option-check" />}</> },
+      { key: "dark", label: <>Tối {themeMode === "dark" && <CheckOutlined className="theme-option-check" />}</> },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === "system" || key === "light" || key === "dark") setThemeMode(key);
+    },
+  };
+
   const accountMenu = {
     items: [
       { key: "summary", label: <div className="account-menu-summary"><Avatar size={38} src={avatarUrl || undefined}>{initials}</Avatar><div><Typography.Text strong>{displayName}</Typography.Text><Typography.Text type="secondary">@{accountUsername || "tài-khoản"}</Typography.Text></div></div> },
@@ -524,7 +552,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
             <Avatar src={avatarUrl || undefined} style={{ background: "#dff3ea", color: "#087a58", fontWeight: 800 }}>{initials}</Avatar>
             <div className="account-copy">
               <Typography.Text strong>{displayName}</Typography.Text>
-              <Tag variant="filled" color={currentRole === "admin" ? "success" : "default"}>{currentRole === "admin" ? "Quản trị viên" : "Thành viên"}</Tag>
+              <Tag className={currentRole === "admin" ? "admin-role-tag" : undefined} variant="filled" color={currentRole === "admin" ? "success" : "default"}>{currentRole === "admin" ? "Quản trị viên" : "Thành viên"}</Tag>
             </div>
           </Flex>
         </div>
@@ -569,12 +597,25 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
             </Flex>
             <Space className="header-actions">
               <NotificationCenter userId={userId} onNotice={notify} />
-              <div className="online-presence" title="Số người đang truy cập trong nhà này" aria-live="polite">
-                <span className={`online-presence-dot${onlineUserCount === null ? " is-loading" : ""}`} aria-hidden="true" />
-                <TeamOutlined />
-                <span className="online-presence-count">{onlineUserCount ?? "—"}</span>
-                <span className="online-presence-label">đang truy cập</span>
-              </div>
+              <Dropdown menu={themeMenu} trigger={["click"]} placement="bottomRight">
+                <Button type="text" shape="circle" className="theme-trigger" icon={resolvedTheme === "dark" ? <MoonOutlined /> : <SunOutlined />} aria-label="Chọn giao diện sáng, tối hoặc theo hệ thống" />
+              </Dropdown>
+              <Popover trigger="click" placement="bottomRight" title={`Đang truy cập (${onlineUserCount ?? "—"})`} content={
+                <div className="online-users-list" aria-live="polite">
+                  {onlineUserIds === null ? <Typography.Text type="secondary">Đang kết nối…</Typography.Text> : onlineUsers.length ? onlineUsers.map((person) => <div className="online-user-row" key={person.id}>
+                    <Avatar className="online-user-avatar" size={32} src={person.isCurrentUser ? avatarUrl || undefined : undefined}>{person.name.slice(0, 1).toUpperCase()}</Avatar>
+                    <span className="online-user-info"><Typography.Text strong>{person.name}{person.isCurrentUser ? " (Bạn)" : ""}</Typography.Text><Typography.Text type="secondary">{person.role === "admin" ? "Quản trị viên" : "Thành viên"}</Typography.Text></span>
+                    <span className="online-user-status" aria-label="Đang online" />
+                  </div>) : <Typography.Text type="secondary">Chưa có ai đang truy cập.</Typography.Text>}
+                </div>
+              }>
+                <button type="button" className="online-presence" aria-label={`Xem danh sách ${onlineUserCount ?? 0} người đang truy cập`}>
+                  <span className={`online-presence-dot${onlineUserCount === null ? " is-loading" : ""}`} aria-hidden="true" />
+                  <TeamOutlined />
+                  <span className="online-presence-count" aria-live="polite">{onlineUserCount ?? "—"}</span>
+                  <span className="online-presence-label">đang truy cập</span>
+                </button>
+              </Popover>
               <Dropdown menu={accountMenu} trigger={["click"]} placement="bottomRight">
                 <Button type="text" shape="circle" className="account-menu-trigger" aria-label="Mở thông tin tài khoản"><Avatar src={avatarUrl || undefined} className="header-avatar">{initials}</Avatar></Button>
               </Dropdown>

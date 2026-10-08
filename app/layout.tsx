@@ -6,6 +6,7 @@ import ExtensionAttributeGuard from "./extension-attribute-guard";
 import PwaRegistration from "./pwa-registration";
 
 import "./responsive.css";
+import "./dark.css";
 export const metadata: Metadata = {
   title: "708 La Thành | Quản lý tài chính",
   description: "Quản lý phòng, hóa đơn và thu chi nhà trọ.",
@@ -36,6 +37,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="vi" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: 'try{var m=localStorage.getItem("rental-finance-theme");document.documentElement.classList.toggle("dark",m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))}catch(e){document.documentElement.classList.toggle("dark",matchMedia("(prefers-color-scheme: dark)").matches)}' }} /></head>
       <body suppressHydrationWarning><ExtensionAttributeGuard /><PwaRegistration /><AntdRegistry><AntdProvider>{children}</AntdProvider></AntdRegistry></body>
     </html>
   );

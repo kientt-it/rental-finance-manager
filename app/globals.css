@@ -11,6 +11,7 @@
   --brand-100: #dff3ea;
   --surface: #ffffff;
   --surface-soft: #f5f8f6;
+  --page-bg: #f3f7f5;
   --line: #e2e9e5;
   --shadow-soft: 0 12px 32px rgba(28, 61, 47, 0.06);
 }
@@ -22,7 +23,7 @@ body {
 }
 
 body {
-  background: #f3f7f5;
+  background: var(--page-bg);
   color: var(--ink-950);
   font-family: "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
   font-optical-sizing: auto;
@@ -388,6 +389,11 @@ select {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.online-presence:hover {
+  background: #eaf5ef;
 }
 
 .online-presence > .anticon {
@@ -412,6 +418,57 @@ select {
 .online-presence-dot.is-loading {
   background: #a7b8b0;
   box-shadow: 0 0 0 3px rgba(167, 184, 176, 0.16);
+}
+
+.online-users-list {
+  display: grid;
+  gap: 2px;
+  width: min(280px, calc(100vw - 48px));
+  max-height: min(340px, 55vh);
+  overflow-y: auto;
+}
+
+.online-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 5px 2px;
+}
+
+.online-user-avatar {
+  flex: none;
+  background: #e1f2e9;
+  color: #087a58;
+  font-weight: 700;
+}
+
+.online-user-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.online-user-info .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.online-user-info .ant-typography-secondary {
+  font-size: 12px;
+}
+
+.online-user-status {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #19a974;
+}
+
+.theme-option-check {
+  margin-left: 18px;
+  color: var(--brand-700);
 }
 
 .account-menu-trigger {
@@ -2205,7 +2262,8 @@ select {
   font-size: 12px;
   line-height: 1.5;
 }
-.notification-center-trigger {
+.notification-center-trigger,
+.theme-trigger {
   width: 42px;
   height: 42px;
   color: #214c3c;
@@ -2213,7 +2271,8 @@ select {
   background: #fff;
 }
 
-.notification-center-trigger:hover {
+.notification-center-trigger:hover,
+.theme-trigger:hover {
   color: #0f6d4b !important;
   background: #f1f7f4 !important;
 }
@@ -2289,7 +2348,7 @@ select {
 .reminder-history-error { display: block; max-width: 170px; font-size: 11px; }
 
 @media (max-width: 680px) {
-  .notification-center-trigger { width: 38px; height: 38px; }
+  .notification-center-trigger, .theme-trigger { width: 38px; height: 38px; }
   .notification-center-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
   .payment-reminder-settings .reminder-number-row .ant-form-item-label { min-height: 42px; }
   .reminder-scope-tabs .ant-tabs-nav-list { min-width: max-content; }
