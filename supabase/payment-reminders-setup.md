@@ -72,14 +72,14 @@ select vault.create_secret('<chuoi-bi-mat>', 'payment_reminders_cron_secret');
 
 Nếu chạy lại, kiểm tra/xóa secret trùng tên trong Vault trước để tránh lỗi tên bị trùng. Không truy vấn hoặc chia sẻ `decrypted_secret`.
 
-## 5. Lên lịch chạy mỗi ngày lúc 08:00 giờ Việt Nam
+## 5. Lên lịch chạy mỗi ngày lúc 12:00 giờ Việt Nam
 
-Supabase Cron dùng UTC, nên 08:00 tại Việt Nam là 01:00 UTC:
+Supabase Cron dùng UTC, nên 12:00 trưa tại Việt Nam là 05:00 UTC. Nếu **chưa có** job, tạo mới bằng:
 
 ```sql
 select cron.schedule(
   'payment-reminders-daily',
-  '0 1 * * *',
+  '0 5 * * *',
   $$
     select net.http_post(
       url := (select decrypted_secret from vault.decrypted_secrets where name = 'payment_reminders_project_url') || '/functions/v1/payment-reminders',
@@ -93,7 +93,19 @@ select cron.schedule(
 );
 ```
 
-Trước khi chạy lại đoạn lên lịch, gỡ job cũ bằng `select cron.unschedule('payment-reminders-daily');`.
+Nếu **đã có** job `payment-reminders-daily`, chỉ đổi giờ chạy, không xóa job và không sửa lệnh gửi hiện có:
+
+```sql
+select cron.alter_job(jobid, '0 5 * * *')
+from cron.job
+where jobname = 'payment-reminders-daily';
+
+select jobname, schedule, active
+from cron.job
+where jobname = 'payment-reminders-daily';
+```
+
+Dòng kiểm tra phải hiện `schedule = 0 5 * * *` và `active = true`. Nếu không có dòng nào, job chưa tồn tại trong project/phiên SQL hiện tại; dùng câu lệnh tạo mới ở trên.
 
 ## 6. Gửi email thử
 
