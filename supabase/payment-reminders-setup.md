@@ -4,7 +4,17 @@ Tính năng dùng Supabase Edge Functions + Cron và Gmail API. Không cần mua
 
 ## 1. Áp dụng cấu trúc dữ liệu
 
-Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_settlements.sql`, `0021_room_rent_billing_cycles.sql` và `0022_split_rent_and_living_reminders.sql` trong Supabase SQL Editor, hoặc deploy migration bằng Supabase CLI. Migration `0022` tách tiền phòng và chi phí sinh hoạt thành hai lịch, hai template và hai email độc lập. Tiền phòng chỉ phát sinh ở tháng đến kỳ 1/3/6/12 tháng của từng phòng; chi phí sinh hoạt vẫn xét hằng tháng.
+Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_settlements.sql`, `0021_room_rent_billing_cycles.sql`, `0022_split_rent_and_living_reminders.sql` và `0023_fix_payment_reminder_conflict_target.sql` trong Supabase SQL Editor, hoặc deploy migration bằng Supabase CLI. Migration `0022` tách tiền phòng và chi phí sinh hoạt thành hai lịch, hai template và hai email độc lập. Migration `0023` sửa lỗi `column reference "property_id" is ambiguous` khi lịch tự động tạo danh sách người nhận; nếu đã chạy `0022` trên Supabase thì chỉ cần chạy riêng `0023`. Tiền phòng chỉ phát sinh ở tháng đến kỳ 1/3/6/12 tháng của từng phòng; chi phí sinh hoạt vẫn xét hằng tháng.
+
+Để kiểm tra bản sửa đã được áp dụng, chạy truy vấn chỉ đọc sau trong SQL Editor. Kết quả `true` nghĩa là hàm đang dùng bản mới:
+
+```sql
+select pg_get_functiondef('public.get_payment_reminder_candidates()'::regprocedure)
+       like '%on conflict on constraint financial_periods_property_id_period_start_key%'
+       as da_ap_dung_ban_sua;
+```
+
+Không cần deploy lại Edge Function hay đổi Gmail token/Cron cho lỗi này. Đừng chạy thử lịch gửi trên dữ liệu thật nếu chưa muốn gửi email cho thành viên đủ điều kiện.
 
 ## 2. Bật Gmail API và tạo OAuth credentials
 
