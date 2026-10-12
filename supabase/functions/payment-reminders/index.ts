@@ -8,6 +8,7 @@ const corsHeaders = {
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 type Settings = {
   property_id: string; organization_id: string; enabled: boolean; email_enabled: boolean; in_app_enabled: boolean;
+  settlement_due_day: number; rent_due_day: number;
   sender_name: string; sender_email: string; reply_to: string; email_subject_template: string; email_body_template: string;
   rent_enabled: boolean; rent_email_enabled: boolean; rent_in_app_enabled: boolean;
   rent_email_subject_template: string; rent_email_body_template: string;
@@ -29,6 +30,11 @@ function vietnamToday() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "01";
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function sampleDueDate(today: string, configuredDay: number) {
+  const [year, month] = today.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month - 1, Math.min(configuredDay, lastDay))).toISOString().slice(0, 10);
 }
 
 async function gmailAccessToken() {
@@ -114,11 +120,12 @@ Deno.serve(async (request) => {
     const reminderScope = text((body as { reminder_scope?: string }).reminder_scope) === "rent" ? "rent" : "living_expense";
     if (!validEmail(testRecipientEmail)) return json(400, { error: "Địa chỉ email nhận thử chưa đúng định dạng." });
     try {
-      const dueDate = vietnamToday();
-      const sample = reminderScope === "rent"
-        ? { member_name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng)", period_start: dueDate.slice(0, 7) + "-01", amount: 4065000, due_date: dueDate }
-        : { member_name: "Người nhận thử", items: "Chi phí sinh hoạt: điện, nước", period_start: dueDate.slice(0, 7) + "-01", amount: 1050000, due_date: dueDate };
+      const today = vietnamToday();
       const typedSettings = settings as Settings;
+      const dueDate = sampleDueDate(today, reminderScope === "rent" ? typedSettings.rent_due_day : typedSettings.settlement_due_day);
+      const sample = reminderScope === "rent"
+        ? { member_name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng)", period_start: today.slice(0, 7) + "-01", amount: 4065000, due_date: dueDate }
+        : { member_name: "Người nhận thử", items: "Chi phí sinh hoạt: điện, nước", period_start: today.slice(0, 7) + "-01", amount: 1050000, due_date: dueDate };
       await sendEmail(
         typedSettings,
         testRecipientEmail,

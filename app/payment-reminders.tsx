@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
-import { Badge, Button, Card, Col, DatePicker, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
+import { Alert, Badge, Button, Card, Col, DatePicker, Drawer, Empty, Flex, Form, Input, InputNumber, Pagination, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
 import { BellOutlined, CheckOutlined, ClockCircleOutlined, HomeOutlined, MailOutlined, ReloadOutlined, SendOutlined, WalletOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -12,16 +12,21 @@ type ReminderScope = "living_expense" | "rent";
 type ReminderEventScope = ReminderScope | "legacy_combined";
 type ReminderSettings = {
   organization_id: string; property_id: string; enabled: boolean; email_enabled: boolean; in_app_enabled: boolean;
-  settlement_due_day: number; reminder_before_days: number; reminder_on_due_date: boolean; reminder_after_days: number;
+  settlement_due_day: number; living_send_day: number; reminder_before_days: number; reminder_on_due_date: boolean; reminder_after_days: number;
   sender_name: string; sender_email: string; reply_to: string; email_subject_template: string; email_body_template: string;
-  rent_enabled: boolean; rent_email_enabled: boolean; rent_in_app_enabled: boolean; rent_due_day: number;
+  rent_enabled: boolean; rent_email_enabled: boolean; rent_in_app_enabled: boolean; rent_due_day: number; rent_send_day: number;
   rent_reminder_before_days: number; rent_reminder_on_due_date: boolean; rent_reminder_after_days: number;
   rent_email_subject_template: string; rent_email_body_template: string;
 };
 type ReminderEvent = {
   id: string; member_name: string; recipient_email: string; amount: number; items: string; period_start: string; due_date: string;
   reminder_type: "before" | "due" | "overdue"; in_app_enabled: boolean; email_status: "pending" | "sent" | "failed" | "skipped";
-  reminder_scope: ReminderEventScope; email_error: string | null; read_at: string | null; created_at: string;
+  reminder_scope: ReminderEventScope; email_error: string | null; attempt_count: number; read_at: string | null; created_at: string; sent_at: string | null;
+};
+type RecipientAudit = {
+  member_id: string; member_name: string; recipient_email: string; reminder_scope: ReminderScope; amount: number;
+  send_date: string | null; due_date: string; status_code: string;
+  last_email_status: ReminderEvent["email_status"] | null; last_email_error: string | null; last_event_at: string | null;
 };
 type RentCycleRoom = { id: string; code: string; base_rent: number; rent_billing_cycle_months: number; rent_cycle_start_month: string };
 const rentCycleOptions = [
@@ -31,23 +36,35 @@ const rentCycleOptions = [
   { value: 12, label: "12 tháng/lần" },
 ];
 const defaults = (organization_id: string, property_id: string): ReminderSettings => ({
-  organization_id, property_id, enabled: false, email_enabled: false, in_app_enabled: true, settlement_due_day: 5,
+  organization_id, property_id, enabled: false, email_enabled: false, in_app_enabled: true, settlement_due_day: 5, living_send_day: 2,
   reminder_before_days: 3, reminder_on_due_date: true, reminder_after_days: 3, sender_name: "708 La Thành",
   sender_email: "", reply_to: "", email_subject_template: "Nhắc thanh toán chi phí sinh hoạt kỳ {{period}}",
   email_body_template: "Chào {{name}},\n\nBạn còn khoản {{items}} của kỳ {{period}}, tổng cộng {{amount}}. Hạn thanh toán là {{due_date}}.\n\nVui lòng mở ứng dụng để xem chi tiết và xác nhận thanh toán.\n\n708 La Thành",
-  rent_enabled: false, rent_email_enabled: false, rent_in_app_enabled: true, rent_due_day: 5,
+  rent_enabled: false, rent_email_enabled: false, rent_in_app_enabled: true, rent_due_day: 5, rent_send_day: 2,
   rent_reminder_before_days: 3, rent_reminder_on_due_date: true, rent_reminder_after_days: 3,
   rent_email_subject_template: "Nhắc đóng tiền phòng kỳ {{period}} trước hạn {{due_date}}",
   rent_email_body_template: "Chào {{name}},\n\nBạn cần đóng {{items}} của kỳ {{period}}, số tiền {{amount}}. Hạn thanh toán là {{due_date}}.\n\nVui lòng mở ứng dụng để xem chi tiết và xác nhận đã đóng tiền.\n\n708 La Thành",
 });
-const fields = "id, member_name, recipient_email, amount, items, period_start, due_date, reminder_type, reminder_scope, in_app_enabled, email_status, email_error, read_at, created_at";
+const fields = "id, member_name, recipient_email, amount, items, period_start, due_date, reminder_type, reminder_scope, in_app_enabled, email_status, email_error, attempt_count, read_at, created_at, sent_at";
 function reminderLabel(type: ReminderEvent["reminder_type"]) { return type === "before" ? "Sắp đến hạn" : type === "due" ? "Đến hạn hôm nay" : "Quá hạn"; }
 function scopeLabel(scope: ReminderEventScope) { return scope === "rent" ? "Tiền phòng" : scope === "legacy_combined" ? "Email gộp cũ" : "Chi phí sinh hoạt"; }
 function statusTag(status: ReminderEvent["email_status"]) {
   if (status === "sent") return <Tag color="success">Đã gửi</Tag>;
   if (status === "failed") return <Tag color="error">Gửi lỗi</Tag>;
   if (status === "pending") return <Tag color="processing">Đang chờ</Tag>;
-  return <Tag>Chỉ trong ứng dụng</Tag>;
+  return <Tag>Không gửi email</Tag>;
+}
+function auditStatusTag(code: string) {
+  const labels: Record<string, [string, string]> = {
+    ready: ["Đến mốc gửi hôm nay", "success"], scheduled: ["Chờ mốc tiếp theo", "processing"],
+    outside_window: ["Đã qua lịch kỳ này", "default"], disabled: ["Đã tắt lịch", "default"],
+    unlinked: ["Chưa liên kết tài khoản", "warning"], no_email: ["Thiếu email", "warning"],
+    no_expense: ["Chưa có chi phí phân bổ", "default"], no_room: ["Chưa có phòng thu tiền", "default"],
+    not_cycle: ["Chưa đến chu kỳ phòng", "default"], paid: ["Đã thanh toán hoặc không còn nợ", "success"],
+    email_off: ["Đã tắt email", "default"],
+  };
+  const [label, color] = labels[code] ?? ["Cần kiểm tra", "warning"];
+  return <Tag color={color}>{label}</Tag>;
 }
 async function functionErrorMessage(error: unknown) {
   if (typeof error === "object" && error !== null && "context" in error) {
@@ -63,6 +80,12 @@ async function functionErrorMessage(error: unknown) {
 export function PaymentReminderSettings({ organizationId, propertyId, onNotice, onRentCyclesChanged }: { organizationId: string; propertyId: string; onNotice: (message: string) => void; onRentCyclesChanged?: () => void }) {
   const [settings, setSettings] = useState(() => defaults(organizationId, propertyId));
   const [events, setEvents] = useState<ReminderEvent[]>([]);
+  const [recipientAudit, setRecipientAudit] = useState<RecipientAudit[]>([]);
+  const [auditError, setAuditError] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
+  const [historyScope, setHistoryScope] = useState<ReminderScope | "all">("all");
+  const [historyStatus, setHistoryStatus] = useState<ReminderEvent["email_status"] | "all">("all");
+  const [historyPage, setHistoryPage] = useState(1);
   const [activeScope, setActiveScope] = useState<ReminderScope>("living_expense");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,17 +99,22 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
     if (!organizationId || !propertyId) return;
     setLoading(true);
     const supabase = createClient();
-    const [settingResult, historyResult, roomResult] = await Promise.all([
+    const [settingResult, historyResult, roomResult, auditResult] = await Promise.all([
       supabase.from("payment_reminder_settings").select("*").eq("property_id", propertyId).maybeSingle(),
-      supabase.from("payment_reminder_events").select(fields).eq("property_id", propertyId).order("created_at", { ascending: false }).limit(10),
+      supabase.from("payment_reminder_events").select(fields).eq("property_id", propertyId).order("created_at", { ascending: false }).limit(200),
       supabase.from("rooms").select("id, code, base_rent, rent_billing_cycle_months, rent_cycle_start_month").eq("property_id", propertyId).order("code"),
+      supabase.rpc("get_payment_reminder_recipient_audit", { target_property_id: propertyId }),
     ]);
-    if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình thông báo. Hãy chạy migration 0022_split_rent_and_living_reminders.sql.");
+    if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình hoặc lịch sử nhắc hạn. Hãy kiểm tra quyền quản trị và migration 0024.");
     if (roomResult.error) onNotice("Không tải được chu kỳ tiền phòng. Hãy kiểm tra migration 0021_room_rent_billing_cycles.sql.");
+    setAuditError(Boolean(auditResult.error));
+    setHistoryError(Boolean(historyResult.error));
+    setRecipientAudit(((auditResult.data ?? []) as RecipientAudit[]).map((row) => ({ ...row, amount: Number(row.amount) })));
     const normalized = settingResult.data ? { ...defaults(organizationId, propertyId), ...settingResult.data } as ReminderSettings : defaults(organizationId, propertyId);
     setSettings(normalized); form.setFieldsValue(normalized);
     setTestRecipientEmail((current) => current || normalized.sender_email);
     setEvents(((historyResult.data ?? []) as ReminderEvent[]).map((event) => ({ ...event, reminder_scope: event.reminder_scope || "living_expense", amount: Number(event.amount) })));
+    setHistoryPage(1);
     const normalizedRooms = ((roomResult.data ?? []) as RentCycleRoom[]).map((room) => ({ ...room, base_rent: Number(room.base_rent), rent_billing_cycle_months: Number(room.rent_billing_cycle_months || 1) }));
     setRentRooms(normalizedRooms);
     setRentCycleDrafts(Object.fromEntries(normalizedRooms.map((room) => [room.id, { months: room.rent_billing_cycle_months, startMonth: dayjs(room.rent_cycle_start_month).startOf("month") }])));
@@ -100,8 +128,12 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from("payment_reminder_settings").upsert({ ...settings, ...values, organization_id: organizationId, property_id: propertyId, updated_by: user?.id ?? null, updated_at: new Date().toISOString() }, { onConflict: "property_id" });
     setSaving(false);
-    if (error) { onNotice("Không thể lưu cấu hình. Hãy kiểm tra quyền quản trị và migration 0022."); return false; }
-    const normalized = { ...settings, ...values }; setSettings(normalized); form.setFieldsValue(normalized); onNotice("Đã lưu cấu hình nhắc hạn."); return true;
+    if (error) { onNotice("Không thể lưu cấu hình. Hãy kiểm tra quyền quản trị và migration 0024."); return false; }
+    const normalized = { ...settings, ...values }; setSettings(normalized); form.setFieldsValue(normalized); onNotice("Đã lưu cấu hình nhắc hạn.");
+    const auditResult = await supabase.rpc("get_payment_reminder_recipient_audit", { target_property_id: propertyId });
+    setAuditError(Boolean(auditResult.error));
+    if (!auditResult.error) setRecipientAudit(((auditResult.data ?? []) as RecipientAudit[]).map((row) => ({ ...row, amount: Number(row.amount) })));
+    return true;
   }
   async function sendTest(scope: ReminderScope) {
     let values: ReminderSettings;
@@ -135,26 +167,30 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
   const previews = useMemo(() => {
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
     const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "01";
-    const year = part("year"); const month = part("month"); const day = part("day");
-    const due_date = new Date(`${year}-${month}-${day}T00:00:00Z`).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+    const year = part("year"); const month = part("month");
+    const dueDateFor = (configuredDay: number) => {
+      const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+      const actualDay = Math.min(configuredDay, lastDay);
+      return new Date(Date.UTC(Number(year), Number(month) - 1, actualDay)).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+    };
     const fillTemplate = (template: string, values: Record<string, string>) => Object.entries(values).reduce((result, [key, value]) => result.replaceAll("{{" + key + "}}", value), template);
-    const livingValues = { name: "Người nhận thử", items: "Chi phí sinh hoạt: điện, nước", period: `${month}/${year}`, amount: "1.050.000 đ", due_date };
-    const rentValues = { name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng)", period: `${month}/${year}`, amount: "4.065.000 đ", due_date };
+    const livingValues = { name: "Người nhận thử", items: "Chi phí sinh hoạt: điện, nước", period: `${month}/${year}`, amount: "1.050.000 đ", due_date: dueDateFor(settings.settlement_due_day) };
+    const rentValues = { name: "Người nhận thử", items: "Tiền phòng P.101 (3 tháng)", period: `${month}/${year}`, amount: "4.065.000 đ", due_date: dueDateFor(settings.rent_due_day) };
     return {
       living_expense: { subject: fillTemplate(settings.email_subject_template, livingValues), body: fillTemplate(settings.email_body_template, livingValues) },
       rent: { subject: fillTemplate(settings.rent_email_subject_template, rentValues), body: fillTemplate(settings.rent_email_body_template, rentValues) },
     };
-  }, [settings.email_body_template, settings.email_subject_template, settings.rent_email_body_template, settings.rent_email_subject_template]);
+  }, [settings.email_body_template, settings.email_subject_template, settings.rent_email_body_template, settings.rent_email_subject_template, settings.settlement_due_day, settings.rent_due_day]);
 
   function channelPanel(scope: ReminderScope) {
     const rent = scope === "rent";
     const config = rent ? {
       enabled: "rent_enabled" as const, emailEnabled: "rent_email_enabled" as const, inAppEnabled: "rent_in_app_enabled" as const,
-      dueDay: "rent_due_day" as const, beforeDays: "rent_reminder_before_days" as const, onDueDate: "rent_reminder_on_due_date" as const,
+      dueDay: "rent_due_day" as const, sendDay: "rent_send_day" as const, onDueDate: "rent_reminder_on_due_date" as const,
       afterDays: "rent_reminder_after_days" as const, subject: "rent_email_subject_template" as const, body: "rent_email_body_template" as const,
     } : {
       enabled: "enabled" as const, emailEnabled: "email_enabled" as const, inAppEnabled: "in_app_enabled" as const,
-      dueDay: "settlement_due_day" as const, beforeDays: "reminder_before_days" as const, onDueDate: "reminder_on_due_date" as const,
+      dueDay: "settlement_due_day" as const, sendDay: "living_send_day" as const, onDueDate: "reminder_on_due_date" as const,
       afterDays: "reminder_after_days" as const, subject: "email_subject_template" as const, body: "email_body_template" as const,
     };
     const enabled = Boolean(settings[config.enabled]);
@@ -180,11 +216,14 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
           <div className="reminder-setting-row"><div><Typography.Text strong>Gửi email riêng</Typography.Text><Typography.Text type="secondary">Mỗi người nhận một email chỉ chứa {rent ? "tiền phòng" : "chi phí sinh hoạt"}</Typography.Text></div><Form.Item name={config.emailEnabled} valuePropName="checked" noStyle><Switch aria-label={`Bật email ${scopeLabel(scope).toLowerCase()}`} /></Form.Item></div>
           <Row gutter={12} className="reminder-number-row">
             <Col xs={24} sm={8}><Form.Item name={config.dueDay} label="Ngày đến hạn" rules={[{ required: true }]}><InputNumber min={1} max={31} precision={0} addonAfter="trong tháng" /></Form.Item></Col>
-            <Col xs={12} sm={8}><Form.Item name={config.beforeDays} label="Nhắc trước hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
+            <Col xs={12} sm={8}><Form.Item name={config.sendDay} label="Ngày gửi nhắc đầu tiên" dependencies={[config.dueDay]} rules={[{ required: true }, ({ getFieldValue }) => ({
+              validator: (_, value: number) => value === 0 || (value > 0 && value < Number(getFieldValue(config.dueDay)))
+                ? Promise.resolve() : Promise.reject(new Error("Ngày gửi phải trước ngày đến hạn; nhập 0 để tắt nhắc trước.")),
+            })]}><InputNumber min={0} max={31} precision={0} addonAfter="trong tháng" /></Form.Item></Col>
             <Col xs={12} sm={8}><Form.Item name={config.afterDays} label="Nhắc quá hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
           </Row>
           <Form.Item className="reminder-due-toggle"><Form.Item name={config.onDueDate} valuePropName="checked" noStyle><Switch aria-label="Nhắc đúng ngày đến hạn" /></Form.Item> <Typography.Text>Nhắc đúng ngày đến hạn</Typography.Text></Form.Item>
-          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chu kỳ lấy từ cấu hình của từng phòng; lịch này chỉ quyết định ngày gửi trong tháng đến kỳ." : "Chi phí sinh hoạt được xét độc lập vào mỗi tháng."}</Typography.Text>
+          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chỉ gửi ở tháng đến chu kỳ của phòng." : "Gửi hằng tháng."} Nhập 0 để bỏ email nhắc trước hạn. Tháng ngắn hơn ngày đã chọn sẽ gửi vào ngày liền trước hạn.</Typography.Text>
         </Card></Col>
         <Col xs={24} lg={12}><Card size="small" title={`Template email ${rent ? "tiền phòng" : "sinh hoạt"}`} className="reminder-subcard">
           <Form.Item name={config.subject} label="Tiêu đề email" rules={[{ required: true, max: 180 }]}><Input maxLength={180} /></Form.Item>
@@ -200,6 +239,11 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
   }
 
   const enabledCount = Number(settings.enabled) + Number(settings.rent_enabled);
+  const auditRows = recipientAudit.filter((row) => row.reminder_scope === activeScope);
+  const filteredHistory = events.filter((event) =>
+    (historyScope === "all" || event.reminder_scope === historyScope) &&
+    (historyStatus === "all" || event.email_status === historyStatus));
+  const historyPageRows = filteredHistory.slice((historyPage - 1) * 20, historyPage * 20);
 
   return <div className="page-stack payment-reminder-settings">
     <Card className="section-card admin-hub-card" title={<div><span>Nhắc hạn thanh toán</span><Typography.Text type="secondary" className="card-title-note">Tiền phòng và chi phí sinh hoạt được gửi thành hai email độc lập</Typography.Text></div>} extra={<Tag color={enabledCount ? "success" : "default"}>{enabledCount}/2 loại đang bật</Tag>}>
@@ -219,12 +263,26 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
           ]} />
           <Flex justify="flex-end" className="reminder-save-row"><Button type="primary" htmlType="submit" loading={saving}>Lưu cấu hình</Button></Flex>
         </Form>
+        <Card size="small" title={`Kiểm tra người nhận · ${scopeLabel(activeScope)}`} extra={<Button type="link" onClick={() => void load()}>Tải lại</Button>} className="reminder-history-card reminder-audit-card">
+          <Typography.Text type="secondary" className="reminder-form-hint">Kỳ hiện tại: {dayjs().format("MM/YYYY")}. Danh sách gồm cả thành viên chưa được tạo email; lý do nằm cạnh từng người.</Typography.Text>
+          {auditError ? <Alert type="error" showIcon message="Không tải được danh sách người nhận" description="Hãy chạy migration 0024 và kiểm tra quyền quản trị, sau đó bấm Tải lại." />
+            : auditRows.length ? <div className="reminder-history-list">{auditRows.map((row) => <div className="reminder-history-row reminder-audit-row" key={`${row.reminder_scope}-${row.member_id}`}>
+              <div className="reminder-history-person"><Typography.Text strong>{row.member_name}</Typography.Text><Typography.Text type="secondary">{row.recipient_email || "Chưa có email"}</Typography.Text></div>
+              <div className="reminder-history-info"><Typography.Text>{vnd.format(row.amount)} · Hạn {dayjs(row.due_date).format("DD/MM/YYYY")}</Typography.Text><Typography.Text type="secondary">{row.send_date ? `Nhắc đầu tiên ${dayjs(row.send_date).format("DD/MM/YYYY")}` : "Không nhắc trước hạn"}</Typography.Text></div>
+              <div className="reminder-audit-outcome">{auditStatusTag(row.status_code)}{row.last_email_status && <span>{statusTag(row.last_email_status)}{row.last_event_at && <Typography.Text type="secondary">{dayjs(row.last_event_at).format("DD/MM HH:mm")}</Typography.Text>}</span>}{row.last_email_error && <Typography.Text type="danger" className="reminder-history-error">{row.last_email_error}</Typography.Text>}</div>
+            </div>)}</div>
+            : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có thành viên hoặc chưa lưu cấu hình nhắc hạn" />}
+        </Card>
         <Card size="small" title="Lịch sử gửi gần đây" extra={<Button type="link" onClick={() => void load()}>Tải lại</Button>} className="reminder-history-card">
-          {events.length ? <div className="reminder-history-list">{events.map((event) => <div className="reminder-history-row" key={event.id}>
+          {historyError ? <Alert type="error" showIcon message="Không tải được lịch sử gửi" description="Kiểm tra quyền quản trị và kết nối Supabase, rồi bấm Tải lại." /> : <>
+          <div className="reminder-history-filters"><Select aria-label="Lọc lịch sử theo loại" value={historyScope} onChange={(value) => { setHistoryScope(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả loại" }, { value: "living_expense", label: "Sinh hoạt" }, { value: "rent", label: "Tiền phòng" }]} /><Select aria-label="Lọc lịch sử theo trạng thái" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "sent", label: "Đã gửi" }, { value: "failed", label: "Gửi lỗi" }, { value: "pending", label: "Đang chờ" }, { value: "skipped", label: "Không gửi email" }]} /><Typography.Text type="secondary">{filteredHistory.length} kết quả trong 200 lần gần nhất</Typography.Text></div>
+          {historyPageRows.length ? <div className="reminder-history-list">{historyPageRows.map((event) => <div className="reminder-history-row" key={event.id}>
             <div className="reminder-history-person"><Typography.Text strong>{event.member_name}</Typography.Text><Typography.Text type="secondary">{event.recipient_email}</Typography.Text></div>
-            <div className="reminder-history-info"><Typography.Text>{event.items} · {vnd.format(event.amount)}</Typography.Text><Typography.Text type="secondary"><Tag>{scopeLabel(event.reminder_scope)}</Tag>{reminderLabel(event.reminder_type)} · {dayjs(event.created_at).format("DD/MM HH:mm")}</Typography.Text></div>
-            <div>{statusTag(event.email_status)}{event.email_error && <Typography.Text type="danger" className="reminder-history-error">{event.email_error}</Typography.Text>}</div>
-          </div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có lần gửi nào" />}
+            <div className="reminder-history-info"><Typography.Text>{event.items} · {vnd.format(event.amount)}</Typography.Text><Typography.Text type="secondary"><Tag>{scopeLabel(event.reminder_scope)}</Tag>{reminderLabel(event.reminder_type)} · Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · Tạo {dayjs(event.created_at).format("DD/MM HH:mm")}</Typography.Text></div>
+            <div>{statusTag(event.email_status)}{event.email_status === "failed" && <Typography.Text type="secondary" className="reminder-history-error">Đã thử {event.attempt_count}/3 lần</Typography.Text>}{event.email_error && <Typography.Text type="danger" className="reminder-history-error">{event.email_error}</Typography.Text>}</div>
+          </div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có lần gửi nào khớp bộ lọc" />}
+          {filteredHistory.length > 20 && <Pagination className="reminder-history-pagination" current={historyPage} pageSize={20} total={filteredHistory.length} showSizeChanger={false} onChange={setHistoryPage} />}
+          </>}
         </Card>
       </>}
     </Card>

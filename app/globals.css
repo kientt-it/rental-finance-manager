@@ -2345,7 +2345,13 @@ select {
 .reminder-history-row:last-child { border-bottom: 0; }
 .reminder-history-person, .reminder-history-info { display: grid; gap: 3px; min-width: 0; }
 .reminder-history-person .ant-typography-secondary, .reminder-history-info .ant-typography-secondary { font-size: 12px; overflow-wrap: anywhere; }
-.reminder-history-error { display: block; max-width: 170px; font-size: 11px; }
+.reminder-history-error { display: block; max-width: 280px; font-size: 12px; overflow-wrap: anywhere; }
+.reminder-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.reminder-history-filters .ant-select { min-width: 165px; }
+.reminder-history-pagination { display: flex; justify-content: flex-end; margin-top: 14px; }
+.reminder-audit-outcome { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.reminder-audit-outcome > span { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.reminder-audit-outcome .ant-tag { margin-inline-end: 0; }
 
 @media (max-width: 680px) {
   .notification-center-trigger, .theme-trigger { width: 38px; height: 38px; }
@@ -2359,4 +2365,10 @@ select {
   .reminder-history-person { grid-column: 1 / -1; }
   .reminder-history-info { grid-column: 1; }
   .reminder-history-row > div:last-child { grid-column: 2; grid-row: 2; }
+  .reminder-audit-row { grid-template-columns: minmax(0, 1fr); }
+  .reminder-audit-row .reminder-history-person,
+  .reminder-audit-row .reminder-history-info,
+  .reminder-audit-row .reminder-audit-outcome { grid-column: 1; grid-row: auto; }
+  .reminder-history-filters .ant-select { flex: 1 1 150px; min-width: 0; }
+  .reminder-history-pagination { justify-content: center; }
 }
