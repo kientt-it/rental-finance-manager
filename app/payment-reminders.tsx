@@ -220,10 +220,10 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
               validator: (_, value: number) => value === 0 || (value > 0 && value < Number(getFieldValue(config.dueDay)))
                 ? Promise.resolve() : Promise.reject(new Error("Ngày gửi phải trước ngày đến hạn; nhập 0 để tắt nhắc trước.")),
             })]}><InputNumber min={0} max={31} precision={0} addonAfter="trong tháng" /></Form.Item></Col>
-            <Col xs={12} sm={8}><Form.Item name={config.afterDays} label="Nhắc quá hạn" rules={[{ required: true }]}><InputNumber min={1} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
+            <Col xs={12} sm={8}><Form.Item name={config.afterDays} label="Nhắc quá hạn" rules={[{ required: true }]}><InputNumber min={0} max={30} precision={0} addonAfter="ngày" /></Form.Item></Col>
           </Row>
           <Form.Item className="reminder-due-toggle"><Form.Item name={config.onDueDate} valuePropName="checked" noStyle><Switch aria-label="Nhắc đúng ngày đến hạn" /></Form.Item> <Typography.Text>Nhắc đúng ngày đến hạn</Typography.Text></Form.Item>
-          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chỉ gửi ở tháng đến chu kỳ của phòng." : "Gửi hằng tháng."} Nhập 0 để bỏ email nhắc trước hạn. Tháng ngắn hơn ngày đã chọn sẽ gửi vào ngày liền trước hạn.</Typography.Text>
+          <Typography.Text type="secondary" className="reminder-form-hint">{rent ? "Chỉ gửi ở tháng đến chu kỳ của phòng." : "Gửi hằng tháng."} Nhập 0 ở ngày gửi đầu tiên hoặc nhắc quá hạn để tắt mốc tương ứng. Tháng ngắn hơn ngày đã chọn sẽ gửi vào ngày liền trước hạn.</Typography.Text>
         </Card></Col>
         <Col xs={24} lg={12}><Card size="small" title={`Template email ${rent ? "tiền phòng" : "sinh hoạt"}`} className="reminder-subcard">
           <Form.Item name={config.subject} label="Tiêu đề email" rules={[{ required: true, max: 180 }]}><Input maxLength={180} /></Form.Item>

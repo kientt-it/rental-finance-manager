@@ -4,7 +4,7 @@ Tính năng dùng Supabase Edge Functions + Cron và Gmail API. Không cần mua
 
 ## 1. Áp dụng cấu trúc dữ liệu
 
-Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_settlements.sql`, `0021_room_rent_billing_cycles.sql`, `0022_split_rent_and_living_reminders.sql`, `0023_fix_payment_reminder_conflict_target.sql` và `0024_separate_send_days_and_recipient_audit.sql` trong Supabase SQL Editor, hoặc deploy migration bằng Supabase CLI. Nếu project đã chạy đến `0023`, chỉ cần chạy `0024`. Migration mới cho phép đặt ngày gửi nhắc đầu tiên riêng cho chi phí sinh hoạt hằng tháng và tiền phòng theo chu kỳ; đồng thời thêm danh sách kiểm tra lý do từng thành viên có hoặc không có email. Ngày đến hạn, nhắc đúng hạn và nhắc quá hạn vẫn là các mốc độc lập. Tiền phòng chỉ phát sinh ở tháng đến kỳ 1/3/6/12 tháng của từng phòng.
+Chạy lần lượt migration `0019_payment_reminders.sql`, `0020_room_rent_settlements.sql`, `0021_room_rent_billing_cycles.sql`, `0022_split_rent_and_living_reminders.sql`, `0023_fix_payment_reminder_conflict_target.sql`, `0024_separate_send_days_and_recipient_audit.sql` và `0025_disable_overdue_reminders_with_zero.sql` trong Supabase SQL Editor, hoặc deploy migration bằng Supabase CLI. Nếu project đã chạy đến `0024`, chỉ cần chạy `0025`. Migration `0024` cho phép đặt ngày gửi nhắc đầu tiên riêng cho chi phí sinh hoạt hằng tháng và tiền phòng theo chu kỳ; đồng thời thêm danh sách kiểm tra lý do từng thành viên có hoặc không có email. Migration `0025` cho phép đặt **Nhắc quá hạn = 0** để tắt email quá hạn cho từng loại. Tiền phòng chỉ phát sinh ở tháng đến kỳ 1/3/6/12 tháng của từng phòng.
 
 Để kiểm tra migration `0024` đã được áp dụng, chạy truy vấn chỉ đọc sau trong SQL Editor. Cả ba cột cần hiện `true`:
 
@@ -20,7 +20,7 @@ select exists (
        to_regprocedure('public.get_payment_reminder_recipient_audit(uuid)') is not null as co_danh_sach_kiem_tra;
 ```
 
-Sau khi chạy `0024`, deploy lại Edge Function và website để bản email thử hiển thị đúng ngày đến hạn cùng màn hình kiểm tra người nhận. Không cần đổi Gmail token hay Cron. Đừng chạy thử lịch gửi trên dữ liệu thật nếu chưa muốn gửi email cho thành viên đủ điều kiện.
+Sau khi chạy `0024` hoặc `0025`, deploy lại Edge Function và website. Bản Edge Function mới cũng bỏ qua email quá hạn cũ còn trong hàng chờ khi bạn đặt **Nhắc quá hạn = 0**. Không cần đổi Gmail token hay Cron. Đừng chạy thử lịch gửi trên dữ liệu thật nếu chưa muốn gửi email cho thành viên đủ điều kiện.
 
 ## 2. Bật Gmail API và tạo OAuth credentials
 
@@ -117,6 +117,6 @@ Dòng kiểm tra phải hiện `schedule = 0 5 * * *` và `active = true`. Nếu
 
 Trong **Quản trị → Thông báo**, nhập tên và địa chỉ Gmail đã kết nối OAuth, nhập địa chỉ nhận thư thử, tùy chọn email nhận phản hồi, lưu cấu hình rồi bấm **Gửi email thử**. Địa chỉ người gửi phải trùng `GMAIL_SENDER_EMAIL`. Email nhắc thật gửi cho thành viên có tài khoản liên kết và email hợp lệ.
 
-Hai tab **Sinh hoạt · hằng tháng** và **Tiền phòng · theo chu kỳ** có ô **Ngày gửi nhắc đầu tiên** riêng. Đây là ngày trong tháng của email nhắc trước hạn; nhập `0` nếu không muốn nhắc trước. Ô **Ngày đến hạn** và công tắc **Nhắc đúng ngày đến hạn** vẫn điều khiển email đúng hạn; **Nhắc quá hạn** điều khiển mốc sau hạn. Với tiền phòng, chỉ những phòng tới chu kỳ trong tháng mới được xét.
+Hai tab **Sinh hoạt · hằng tháng** và **Tiền phòng · theo chu kỳ** có ô **Ngày gửi nhắc đầu tiên** riêng. Đây là ngày trong tháng của email nhắc trước hạn; nhập `0` nếu không muốn nhắc trước. Ô **Ngày đến hạn** và công tắc **Nhắc đúng ngày đến hạn** vẫn điều khiển email đúng hạn; **Nhắc quá hạn** điều khiển mốc sau hạn và nhận `0` để không nhắc quá hạn. Với tiền phòng, chỉ những phòng tới chu kỳ trong tháng mới được xét.
 
 Khối **Kiểm tra người nhận** liệt kê mọi thành viên đang hoạt động của kỳ hiện tại, kể cả người không có email gửi. Nó ghi lý do như chưa liên kết tài khoản, thiếu địa chỉ email, chưa có chi phí phân bổ, chưa tới chu kỳ phòng, đã thanh toán hoặc đang chờ ngày gửi. **Lịch sử gửi gần đây** lấy tối đa 200 lần, lọc theo loại/trạng thái và hiển thị lỗi Gmail cùng số lần thử. Nếu một người không xuất hiện trong lịch sử nhưng khối kiểm tra ghi “Đến mốc gửi hôm nay”, hãy kiểm tra lần chạy Cron/Edge Function; nếu có dòng “Gửi lỗi”, đọc chi tiết lỗi trên chính dòng đó. Bản email thử không tạo lịch sử nhắc thật.

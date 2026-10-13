@@ -8,7 +8,7 @@ const corsHeaders = {
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 type Settings = {
   property_id: string; organization_id: string; enabled: boolean; email_enabled: boolean; in_app_enabled: boolean;
-  settlement_due_day: number; rent_due_day: number;
+  settlement_due_day: number; rent_due_day: number; reminder_after_days: number; rent_reminder_after_days: number;
   sender_name: string; sender_email: string; reply_to: string; email_subject_template: string; email_body_template: string;
   rent_enabled: boolean; rent_email_enabled: boolean; rent_in_app_enabled: boolean;
   rent_email_subject_template: string; rent_email_body_template: string;
@@ -164,7 +164,10 @@ Deno.serve(async (request) => {
     const scopeEnabled = event.reminder_scope === "rent"
       ? Boolean(setting?.rent_enabled && setting?.rent_email_enabled)
       : Boolean(setting?.enabled && setting?.email_enabled);
-    if (!setting || !scopeEnabled) { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
+    const overdueDisabled = event.reminder_type === "overdue" && (event.reminder_scope === "rent"
+      ? Number(setting?.rent_reminder_after_days) === 0
+      : Number(setting?.reminder_after_days) === 0);
+    if (!setting || !scopeEnabled || overdueDisabled) { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
     const attempt = Number(event.attempt_count) + 1;
     try {
       await sendEmail(

@@ -46,6 +46,7 @@
    - `supabase/migrations/0022_split_rent_and_living_reminders.sql`
    - `supabase/migrations/0023_fix_payment_reminder_conflict_target.sql`
    - `supabase/migrations/0024_separate_send_days_and_recipient_audit.sql`
+   - `supabase/migrations/0025_disable_overdue_reminders_with_zero.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 
