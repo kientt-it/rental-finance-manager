@@ -101,6 +101,7 @@ type RoomRentSettlement = {
   room_id: string;
   member_id: string;
   is_settled: boolean;
+  share_amount: number;
 };
 
 type RoomFormValues = {
@@ -175,7 +176,7 @@ function errorMessage(error: { message?: string } | null, fallback: string) {
 
 export function RoomsView({ organizationId, propertyId, onNotice, users, currentMemberId = null, canManage = false, canManageRent = canManage, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; currentMemberId?: string | null; canManage?: boolean; canManageRent?: boolean }) {
   const [rooms, setRooms] = useState<RentalRoom[]>([]);
-  const [rentSettlements, setRentSettlements] = useState<Record<string, boolean>>({});
+  const [rentSettlements, setRentSettlements] = useState<Record<string, RoomRentSettlement>>({});
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RentalRoom | null>(null);
@@ -191,7 +192,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
       supabase.from("rooms").select("id, code, floor, room_type, residents, base_rent, rent_billing_cycle_months, rent_cycle_start_month, coefficient, status").eq("property_id", propertyId).order("floor", { ascending: false }).order("code"),
       supabase.from("room_member_assignments").select("room_id, member_id").eq("organization_id", organizationId),
       financialPeriod
-        ? supabase.from("room_rent_settlements").select("room_id, member_id, is_settled").eq("financial_period_id", financialPeriod.id)
+        ? supabase.from("room_rent_settlements").select("room_id, member_id, is_settled, share_amount").eq("financial_period_id", financialPeriod.id)
         : Promise.resolve({ data: [] as RoomRentSettlement[], error: null }),
     ]);
     if (error || assignmentError) onNotice("Không tải được danh sách phòng. Hãy chạy migration 0009 và 0021.");
@@ -203,7 +204,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
       const member_ids = idsByRoom.get(room.id) ?? [];
       return { ...room, member_ids, base_rent: Number(room.base_rent), rent_billing_cycle_months: Number(room.rent_billing_cycle_months || 1), coefficient: Number(room.coefficient), residents: member_ids.map((id) => namesById.get(id)).filter(Boolean) as string[] };
     }));
-    setRentSettlements(Object.fromEntries(((settlementResult.data ?? []) as RoomRentSettlement[]).map((item) => [`${item.room_id}:${item.member_id}`, item.is_settled])));
+    setRentSettlements(Object.fromEntries(((settlementResult.data ?? []) as RoomRentSettlement[]).map((item) => [`${item.room_id}:${item.member_id}`, { ...item, share_amount: Number(item.share_amount) }])));
     setLoading(false);
   }, [financialPeriod, onNotice, organizationId, propertyId, users]);
 
@@ -212,6 +213,18 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
   const totalRent = rooms.reduce((sum, room) => sum + room.base_rent, 0);
   const occupiedRooms = rooms.filter((room) => room.status === "occupied").length;
   const residentCount = rooms.reduce((sum, room) => sum + room.residents.length, 0);
+  const knownMemberIds = new Set(users.map((user) => user.user_id));
+  const rentPaidThisPeriod = rooms.reduce((totals, room) => {
+    if (!rentCycleStatus(room.rent_cycle_start_month, room.rent_billing_cycle_months, periodStart).isDue) return totals;
+    for (const memberId of room.member_ids) {
+      if (!knownMemberIds.has(memberId)) continue;
+      const settlement = rentSettlements[`${room.id}:${memberId}`];
+      if (!settlement?.is_settled) continue;
+      totals.amount += settlement.share_amount;
+      totals.people += 1;
+    }
+    return totals;
+  }, { amount: 0, people: 0 });
   const floors = Array.from(new Set(rooms.map((room) => room.floor))).sort((a, b) => b - a);
 
   function openCreate() {
@@ -291,7 +304,10 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
     });
     setSavingSettlementKey(null);
     if (error) return onNotice("Không thể cập nhật trạng thái tiền phòng. Hãy kiểm tra migration 0021.");
-    setRentSettlements((current) => ({ ...current, [key]: isSettled }));
+    const shareAmount = room.member_ids.length
+      ? Math.round((room.base_rent * room.rent_billing_cycle_months / room.member_ids.length) * 100) / 100
+      : 0;
+    setRentSettlements((current) => ({ ...current, [key]: { room_id: room.id, member_id: memberId, is_settled: isSettled, share_amount: shareAmount } }));
     onNotice(isSettled
       ? `Đã xác nhận ${memberName} đóng tiền phòng ${room.code}.`
       : `Đã chuyển ${memberName} về trạng thái chưa đóng tiền phòng ${room.code}.`);
@@ -304,7 +320,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
         { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined />, tone: "neutral" },
         { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% đang sử dụng` : "Chưa có phòng", icon: <HomeOutlined />, tone: "blue" },
         { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined />, tone: "neutral" },
-        { label: "Giá bình quân", value: rooms.length ? vnd.format(totalRent / rooms.length) : vnd.format(0), note: "Mỗi phòng / tháng", icon: <BankOutlined />, tone: "neutral" },
+        { label: "Số tiền đã đóng kỳ này", value: vnd.format(rentPaidThisPeriod.amount), note: `${rentPaidThisPeriod.people}/${residentCount} người đang ở đã đóng`, icon: <BankOutlined />, tone: "green" },
       ]} />
 
       <Flex className="view-actions room-view-actions" justify="flex-end" align="center" gap={12} wrap>
@@ -358,7 +374,7 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
   canManageRent?: boolean;
   financialPeriod: FinancialPeriod | null;
   periodStart: string;
-  rentSettlements: Record<string, boolean>;
+  rentSettlements: Record<string, RoomRentSettlement>;
   savingSettlementKey: string | null;
   onToggleRentSettlement: (room: RentalRoom, memberId: string, memberName: string, isSettled: boolean) => Promise<void>;
   onEdit: () => void;
@@ -370,7 +386,7 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
   const cycle = rentCycleStatus(room.rent_cycle_start_month, room.rent_billing_cycle_months, periodStart);
   const cycleRent = room.base_rent * room.rent_billing_cycle_months;
   const shareAmount = room.member_ids.length ? Math.round(cycleRent / room.member_ids.length) : 0;
-  const paidCount = residents.filter((resident) => rentSettlements[`${room.id}:${resident.user_id}`]).length;
+  const paidCount = residents.filter((resident) => rentSettlements[`${room.id}:${resident.user_id}`]?.is_settled).length;
   return (
     <Card className={`rental-card ${compact ? "compact" : ""}`} hoverable={!compact}>
       <Flex justify="space-between" align="center">
@@ -396,7 +412,7 @@ function RoomCard({ room, users, currentMemberId, compact = false, canManage = f
         </Flex>
         {!cycle.isDue ? <div className="room-rent-not-due"><Typography.Text type="secondary">Chưa đến kỳ thu. Kỳ tiếp theo: {cycle.nextDue.format("MM/YYYY")}.</Typography.Text></div> : residents.length ? <div className="room-rent-member-list">{residents.map((resident) => {
           const settlementKey = `${room.id}:${resident.user_id}`;
-          const isSettled = Boolean(rentSettlements[settlementKey]);
+          const isSettled = Boolean(rentSettlements[settlementKey]?.is_settled);
           const canToggle = canManageRent || resident.user_id === currentMemberId;
           const status = <Tag color={isSettled ? "success" : "warning"}>{isSettled ? "Đã đóng" : "Chưa đóng"}</Tag>;
           return <div className="room-rent-member-row" key={resident.user_id} aria-busy={savingSettlementKey === settlementKey}>
