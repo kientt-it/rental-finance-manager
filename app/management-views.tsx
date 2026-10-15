@@ -35,11 +35,14 @@ import {
 import {
   BankOutlined,
   CheckCircleFilled,
+  ClockCircleOutlined,
   CopyOutlined,
   DeleteOutlined,
   DisconnectOutlined,
   DownloadOutlined,
   EditOutlined,
+  FileTextOutlined,
+  HistoryOutlined,
   HomeOutlined,
   InfoCircleOutlined,
   LinkOutlined,
@@ -273,9 +276,14 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
       return onNotice(errorMessage(result.error, "Không thể lưu phòng. Vui lòng kiểm tra lại dữ liệu."));
     }
     const roomId = result.data.id;
-    const { error: clearError } = await supabase.from("room_member_assignments").delete().eq("room_id", roomId);
-    const assignmentResult = values.member_ids.length
-      ? await supabase.from("room_member_assignments").insert(values.member_ids.map((memberId) => ({ room_id: roomId, member_id: memberId, organization_id: organizationId })))
+    const previousMemberIds = editingRoom?.member_ids ?? [];
+    const removedMemberIds = previousMemberIds.filter((memberId) => !values.member_ids.includes(memberId));
+    const addedMemberIds = values.member_ids.filter((memberId) => !previousMemberIds.includes(memberId));
+    const { error: clearError } = removedMemberIds.length
+      ? await supabase.from("room_member_assignments").delete().eq("room_id", roomId).in("member_id", removedMemberIds)
+      : { error: null };
+    const assignmentResult = addedMemberIds.length
+      ? await supabase.from("room_member_assignments").insert(addedMemberIds.map((memberId) => ({ room_id: roomId, member_id: memberId, organization_id: organizationId })))
       : { error: null };
     setSaving(false);
     if (clearError || assignmentResult.error) return onNotice("Đã lưu phòng nhưng chưa thể cập nhật thành viên đang ở.");
@@ -320,7 +328,7 @@ export function RoomsView({ organizationId, propertyId, onNotice, users, current
         { label: "Tổng tiền phòng", value: vnd.format(totalRent), note: `${rooms.length} phòng`, icon: <WalletOutlined />, tone: "neutral" },
         { label: "Phòng đang ở", value: `${occupiedRooms}/${rooms.length}`, note: rooms.length ? `${Math.round(occupiedRooms / rooms.length * 100)}% đang sử dụng` : "Chưa có phòng", icon: <HomeOutlined />, tone: "blue" },
         { label: "Người đang ở", value: `${residentCount} người`, note: "Theo thông tin phòng", icon: <TeamOutlined />, tone: "neutral" },
-        { label: "Số tiền đã đóng kỳ này", value: vnd.format(rentPaidThisPeriod.amount), note: `${rentPaidThisPeriod.people}/${residentCount} người đang ở đã đóng`, icon: <BankOutlined />, tone: "green" },
+        { label: "Số tiền đã đóng kỳ này", value: vnd.format(rentPaidThisPeriod.amount), note: `${rentPaidThisPeriod.people}/${residentCount} người đã đóng`, icon: <BankOutlined />, tone: "green" },
       ]} />
 
       <Flex className="view-actions room-view-actions" justify="flex-end" align="center" gap={12} wrap>
@@ -628,12 +636,14 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
   const [people, setPeople] = useState<PersonCost[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     if (!organizationId || !propertyId) return;
     if (!financialPeriod) {
       setExpenses([]);
       setPeople(chargeableMembers(users).map((user) => ({ ...user, allocated: 0, advanced: 0, balance: 0, paid: false })));
+      setError("");
       setLoading(false);
       return;
     }
@@ -643,6 +653,7 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
       supabase.from("expenses").select("id, category, amount, expense_date, payer_member_id, status, reference_code, note, expense_member_participants(member_id, allocated_amount)").eq("organization_id", organizationId).eq("financial_period_id", financialPeriod.id),
       supabase.from("household_member_settlements").select("member_id, is_settled").eq("property_id", propertyId).eq("financial_period_id", financialPeriod.id),
     ]);
+    setError(expenseError || settlementError ? "Không tải được dữ liệu đối soát. Hãy kiểm tra kết nối và migration 0013." : "");
     if (expenseError || settlementError) onError?.("Không tải được dữ liệu đối soát. Hãy chạy migration 0013.");
     const normalizedExpenses = ((expenseRows ?? []) as unknown as ExpenseRecord[]).map((expense) => ({ ...expense, amount: Number(expense.amount), expense_member_participants: (expense.expense_member_participants ?? []).map((item) => ({ ...item, allocated_amount: Number(item.allocated_amount) })) }));
     const paidMap = new Map(((settlementRows ?? []) as Settlement[]).map((item) => [item.member_id, item.is_settled]));
@@ -656,7 +667,7 @@ function usePeopleCosts(organizationId: string, propertyId: string, users: Organ
   }, [financialPeriod, onError, organizationId, propertyId, users]);
 
   useEffect(() => { void load(); }, [load]);
-  return { people, expenses, loading, reload: load };
+  return { people, expenses, loading, error, reload: load };
 }
 
 export function PeopleCostsView({ organizationId, propertyId, users, onNotice, canManageQr = false, canManageSettlements = false, currentMemberId, financialPeriod, periodStart }: SharedProps & PeriodProps & { users: OrganizationUser[]; canManageQr?: boolean; canManageSettlements?: boolean; currentMemberId: string | null }) {
@@ -1026,28 +1037,268 @@ export function PaymentQrManagement({ organizationId, propertyId, onNotice }: Sh
   );
 }
 
-export function ReportView({ organizationId, propertyId, users, financialPeriod, periodStart }: { organizationId: string; propertyId: string; users: OrganizationUser[] } & PeriodProps) {
-  const { people, expenses, loading } = usePeopleCosts(organizationId, propertyId, users, financialPeriod);
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const collected = people.filter((person) => person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
-  const outstanding = people.filter((person) => !person.paid && person.balance > 0).reduce((sum, person) => sum + person.balance, 0);
-  const collectibleTotal = collected + outstanding;
-  const collectionRate = collectibleTotal ? Math.round(collected / collectibleTotal * 100) : 0;
-  if (loading) return <Skeleton active paragraph={{ rows: 10 }} />;
-  return (
-    <div className="page-stack report-page">
-      {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo.`} />}
-      <ViewSummary items={[
-        { label: "Tổng chi kỳ này", value: vnd.format(total), note: financialPeriodShortLabel(periodStart), icon: <WalletOutlined />, tone: "neutral" },
-        { label: "Tổng cần thu", value: vnd.format(collectibleTotal), note: `${people.filter((person) => person.balance > 0).length} thành viên cần đóng`, icon: <TeamOutlined />, tone: "blue" },
-        { label: "Đã thu", value: vnd.format(collected), note: `${collectionRate}% trên tổng cần thu`, icon: <CheckCircleFilled />, tone: "green" },
-        { label: "Còn tồn đọng", value: vnd.format(outstanding), note: "Cần tiếp tục đối soát", icon: <InfoCircleOutlined />, tone: outstanding > 0 ? "orange" : "green" },
-      ]} />
-      <Row gutter={[16, 16]}>
-        <Col xs={24}><Card title="Tiến độ thu chi" className="section-card"><Flex vertical gap={22}><div className="collection-progress"><Flex justify="space-between" gap={16} wrap><div><Typography.Text strong>Đã thu {vnd.format(collected)}</Typography.Text><Typography.Text type="secondary" className="cell-subtext">Trên tổng cần thu {vnd.format(collectibleTotal)}</Typography.Text></div><Typography.Text strong className="collection-rate">{collectionRate}%</Typography.Text></Flex><Progress percent={collectionRate} showInfo={false} strokeColor="#087a58" /></div>{expenses.length ? expenses.map((expense) => <div key={expense.id}><Flex justify="space-between"><Typography.Text>{expense.category}</Typography.Text><Typography.Text strong>{vnd.format(expense.amount)}</Typography.Text></Flex><Progress percent={total ? Math.round(expense.amount / total * 100) : 0} showInfo={false} strokeColor="#68ae92" /></div>) : <Empty description="Chưa có chi phí trong tháng" />}</Flex></Card></Col>
-      </Row>
-    </div>
-  );
+type ReportRoom = {
+  id: string;
+  code: string;
+  base_rent: number;
+  rent_billing_cycle_months: number;
+  rent_cycle_start_month: string;
+};
+type ReportAssignment = { room_id: string; member_id: string };
+type ReportRentSettlement = { room_id: string; member_id: string; share_amount: number; is_settled: boolean };
+type ReportRentItem = { key: string; roomId: string; roomCode: string; memberId: string; memberName: string; amount: number; paid: boolean };
+type ReportActivityEvent = {
+  id: number;
+  actor_user_id: string | null;
+  entity_type: string;
+  action: "created" | "updated" | "deleted";
+  details: Record<string, string | number | boolean | null>;
+  occurred_at: string;
+};
+type ReportDueItem = { key: string; memberName: string; roomCode: string; kind: "Tiền phòng" | "Sinh hoạt"; amount: number };
+
+function ReportKpi({ label, value, note, icon }: { label: string; value: number; note: string; icon: React.ReactNode }) {
+  return <div className="report-kpi"><span className="report-kpi-icon">{icon}</span><span className="report-kpi-label">{label}</span><strong>{vnd.format(value)}</strong><small>{note}</small></div>;
+}
+
+function ReportAmountPanel({ title, note, total, paid, href }: { title: string; note: string; total: number; paid: number; href: string }) {
+  const percent = total > 0 ? Math.round(paid / total * 100) : 0;
+  return <section className="report-amount-panel">
+    <div className="report-panel-heading"><div><h3>{title}</h3><p>{note}</p></div><a href={href}>Xem chi tiết</a></div>
+    <strong className="report-panel-total">{vnd.format(total)}</strong>
+    <div className="report-panel-meta"><span>Tiến độ thanh toán</span><b>{vnd.format(paid)} đã xác nhận</b></div>
+    <Progress percent={percent} showInfo={false} strokeColor="var(--brand-600)" trailColor="var(--line)" />
+    <div className="report-panel-foot"><span>Còn chưa đóng</span><b>{vnd.format(Math.max(total - paid, 0))}</b></div>
+  </section>;
+}
+
+function reportActivityCopy(event: ReportActivityEvent, users: OrganizationUser[]) {
+  const actor = users.find((user) => user.auth_user_id === event.actor_user_id)?.full_name
+    ?? (event.actor_user_id ? "Thành viên cũ" : "Hệ thống");
+  const member = users.find((user) => user.user_id === event.details.member_id)?.full_name ?? String(event.details.member_name || "thành viên");
+  const room = event.details.room_code || "phòng";
+  const amount = Number(event.details.amount);
+  const amountText = Number.isFinite(amount) && event.details.amount != null ? vnd.format(amount) : "";
+  const verb = event.action === "created" ? "thêm" : event.action === "deleted" ? "xóa" : "sửa";
+  if (event.entity_type === "expenses") return { title: `${actor} ${verb} khoản ${event.details.category || "chi phí"}`, detail: amountText };
+  if (event.entity_type === "rooms") return { title: `${actor} ${verb} phòng ${room}`, detail: amountText };
+  if (event.entity_type === "room_rent_settlements") return {
+    title: `${actor} ${event.details.is_settled === true ? "xác nhận" : event.details.previous_is_settled === true ? "bỏ xác nhận" : "cập nhật"} tiền phòng ${room} của ${member}`,
+    detail: amountText,
+  };
+  if (event.entity_type === "household_member_settlements") return {
+    title: `${actor} ${event.details.is_settled === true ? "xác nhận" : event.details.previous_is_settled === true ? "bỏ xác nhận" : "cập nhật"} sinh hoạt của ${member}`,
+    detail: String(event.details.period || ""),
+  };
+  if (event.entity_type === "room_member_assignments") return {
+    title: `${actor} ${event.action === "deleted" ? "chuyển" : "xếp"} ${member} ${event.action === "deleted" ? "khỏi" : "vào"} phòng ${room}`,
+    detail: "",
+  };
+  return { title: `${actor} ${verb} hồ sơ ${event.details.member_name || member}`, detail: "" };
+}
+
+function downloadReportCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function ReportView({ organizationId, propertyId, users, currentRole, currentMemberId, financialPeriod, periodStart, periodOptions, onPeriodChange }: {
+  organizationId: string;
+  propertyId: string;
+  users: OrganizationUser[];
+  currentRole: string;
+  currentMemberId: string | null;
+  periodOptions: { value: string; label: string }[];
+  onPeriodChange: (value: string) => void;
+} & PeriodProps) {
+  const isAdmin = currentRole === "admin";
+  const [rooms, setRooms] = useState<ReportRoom[]>([]);
+  const [assignments, setAssignments] = useState<ReportAssignment[]>([]);
+  const [rentSettlements, setRentSettlements] = useState<ReportRentSettlement[]>([]);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [roomError, setRoomError] = useState("");
+  const [roomFilter, setRoomFilter] = useState("all");
+  const [showAllDue, setShowAllDue] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyRows, setHistoryRows] = useState<ReportActivityEvent[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const { people, expenses, loading: costsLoading, error: costsError } = usePeopleCosts(organizationId, propertyId, users, financialPeriod);
+
+  useEffect(() => {
+    if (!organizationId || !propertyId) return;
+    let active = true;
+    async function loadRooms() {
+      setRoomLoading(true);
+      setRoomError("");
+      const supabase = createClient();
+      const assignmentQuery = supabase.from("room_member_assignments").select("room_id, member_id").eq("organization_id", organizationId);
+      const settlementQuery = supabase.from("room_rent_settlements").select("room_id, member_id, share_amount, is_settled").eq("financial_period_id", financialPeriod?.id ?? "");
+      const [roomResult, assignmentResult, settlementResult] = await Promise.all([
+        supabase.from("rooms").select("id, code, base_rent, rent_billing_cycle_months, rent_cycle_start_month").eq("property_id", propertyId).order("code"),
+        assignmentQuery,
+        financialPeriod
+          ? (!isAdmin && currentMemberId ? settlementQuery.eq("member_id", currentMemberId) : settlementQuery)
+          : Promise.resolve({ data: [] as ReportRentSettlement[], error: null }),
+      ]);
+      if (!active) return;
+      if (roomResult.error || assignmentResult.error || settlementResult.error) {
+        setRoomError("Không tải được tiền phòng. Hãy kiểm tra kết nối và migration 0021.");
+      }
+      setRooms(((roomResult.data ?? []) as ReportRoom[]).map((room) => ({
+        ...room,
+        base_rent: Number(room.base_rent),
+        rent_billing_cycle_months: Number(room.rent_billing_cycle_months || 1),
+      })));
+      setAssignments((assignmentResult.data ?? []) as ReportAssignment[]);
+      setRentSettlements(((settlementResult.data ?? []) as ReportRentSettlement[]).map((item) => ({ ...item, share_amount: Number(item.share_amount) })));
+      setRoomLoading(false);
+    }
+    void loadRooms();
+    return () => { active = false; };
+  }, [organizationId, propertyId, financialPeriod?.id, isAdmin, currentMemberId]);
+
+  useEffect(() => {
+    if (!isAdmin || !organizationId) return;
+    let active = true;
+    async function loadHistory() {
+      setHistoryLoading(true);
+      setHistoryError("");
+      const pageSize = historyExpanded ? 10 : 3;
+      const start = historyExpanded ? (historyPage - 1) * pageSize : 0;
+      const { data, error, count } = await createClient().from("report_activity_events")
+        .select("id, actor_user_id, entity_type, action, details, occurred_at", { count: "exact" })
+        .eq("organization_id", organizationId)
+        .or(`property_id.eq.${propertyId},property_id.is.null`)
+        .order("occurred_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(start, start + pageSize - 1);
+      if (!active) return;
+      setHistoryRows((data ?? []) as ReportActivityEvent[]);
+      setHistoryTotal(count ?? 0);
+      setHistoryError(error ? "Chưa tải được lịch sử thao tác. Hãy chạy migration 0026_report_activity_log.sql." : "");
+      setHistoryLoading(false);
+    }
+    void loadHistory();
+    return () => { active = false; };
+  }, [isAdmin, organizationId, propertyId, historyExpanded, historyPage]);
+
+  const rentItems = useMemo(() => {
+    const roomSettlements = new Map(rentSettlements.map((item) => [`${item.room_id}:${item.member_id}`, item]));
+    const names = new Map(users.map((user) => [user.user_id, user.full_name]));
+    return rooms.flatMap((room): ReportRentItem[] => {
+      const isDue = rentCycleStatus(room.rent_cycle_start_month, room.rent_billing_cycle_months, periodStart).isDue;
+      const members = isDue ? assignments.filter((assignment) => assignment.room_id === room.id) : [];
+      const historicalMembers = rentSettlements.filter((settlement) => settlement.room_id === room.id && !members.some((member) => member.member_id === settlement.member_id));
+      if (!members.length && !historicalMembers.length) return [];
+      const share = members.length ? Math.round((room.base_rent * room.rent_billing_cycle_months / members.length) * 100) / 100 : 0;
+      return [...members, ...historicalMembers.map((member) => ({ room_id: room.id, member_id: member.member_id }))].map((member) => {
+        const settlement = roomSettlements.get(`${room.id}:${member.member_id}`);
+        return {
+          key: `${room.id}:${member.member_id}`,
+          roomId: room.id,
+          roomCode: room.code,
+          memberId: member.member_id,
+          memberName: names.get(member.member_id) ?? "Thành viên",
+          amount: settlement?.share_amount ?? share,
+          paid: settlement?.is_settled ?? false,
+        };
+      });
+    });
+  }, [assignments, periodStart, rentSettlements, rooms, users]);
+
+  const selectedMemberIds = roomFilter === "all"
+    ? null
+    : new Set(assignments.filter((assignment) => assignment.room_id === roomFilter).map((assignment) => assignment.member_id));
+  const scopedPeople = isAdmin
+    ? people.filter((person) => !selectedMemberIds || selectedMemberIds.has(person.user_id))
+    : people.filter((person) => person.user_id === currentMemberId);
+  const scopedRent = rentItems.filter((item) => isAdmin
+    ? roomFilter === "all" || item.roomId === roomFilter
+    : item.memberId === currentMemberId);
+  const rentTotal = scopedRent.reduce((sum, item) => sum + item.amount, 0);
+  const rentPaid = scopedRent.filter((item) => item.paid).reduce((sum, item) => sum + item.amount, 0);
+  const livingTotal = scopedPeople.reduce((sum, person) => sum + Math.max(person.balance, 0), 0);
+  const livingPaid = scopedPeople.filter((person) => person.paid).reduce((sum, person) => sum + Math.max(person.balance, 0), 0);
+  const totalDue = rentTotal + livingTotal;
+  const totalPaid = rentPaid + livingPaid;
+  const totalOpen = Math.max(totalDue - totalPaid, 0);
+  const expenseTotal = roomFilter === "all" || !isAdmin
+    ? expenses.reduce((sum, expense) => sum + expense.amount, 0)
+    : expenses.reduce((sum, expense) => sum + expense.expense_member_participants
+      .filter((participant) => selectedMemberIds?.has(participant.member_id))
+      .reduce((allocated, participant) => allocated + participant.allocated_amount, 0), 0);
+  const member = scopedPeople[0];
+  const memberRoom = scopedRent.map((item) => item.roomCode).join(", ");
+  const memberExpenseHref = `/people-costs?period=${encodeURIComponent(periodStart)}`;
+  const roomHref = `/room?period=${encodeURIComponent(periodStart)}`;
+  const dueItems: ReportDueItem[] = [
+    ...scopedRent.filter((item) => !item.paid && item.amount > 0).map((item): ReportDueItem => ({
+      key: `rent:${item.key}`, memberName: item.memberName, roomCode: item.roomCode, kind: "Tiền phòng", amount: item.amount,
+    })),
+    ...scopedPeople.filter((person) => !person.paid && person.balance > 0).map((person): ReportDueItem => ({
+      key: `living:${person.user_id}`, memberName: person.full_name,
+      roomCode: rooms.find((room) => assignments.some((assignment) => assignment.room_id === room.id && assignment.member_id === person.user_id))?.code ?? "—",
+      kind: "Sinh hoạt", amount: person.balance,
+    })),
+  ].sort((a, b) => b.amount - a.amount);
+
+  function exportReport() {
+    const header = ["Kỳ", "Thành viên", "Phòng", "Loại tiền", "Số tiền phải đóng", "Trạng thái"];
+    const rentRows = scopedRent.map((item) => [periodStart, item.memberName, item.roomCode, "Tiền phòng", String(item.amount), item.paid ? "Đã đóng" : "Chưa đóng"]);
+    const livingRows = scopedPeople.filter((person) => person.balance > 0).map((person) => [periodStart, person.full_name,
+      rooms.find((room) => assignments.some((assignment) => assignment.room_id === room.id && assignment.member_id === person.user_id))?.code ?? "",
+      "Sinh hoạt", String(person.balance), person.paid ? "Đã đóng" : "Chưa đóng"]);
+    downloadReportCsv(`bao-cao-${periodStart}${isAdmin ? "" : "-ca-nhan"}.csv`, [header, ...rentRows, ...livingRows]);
+  }
+
+  const historyCard = isAdmin && <Card className="report-section report-activity-card" title={<div><strong>{historyExpanded ? "Lịch sử thao tác" : "Thao tác gần đây"}</strong><small>Ghi nhận từ khi bật nhật ký; chỉ quản trị viên xem được</small></div>} extra={historyExpanded
+    ? <Button type="link" onClick={() => { setHistoryExpanded(false); setHistoryPage(1); }}>Về tổng quan</Button>
+    : <Button type="link" onClick={() => { setHistoryExpanded(true); setHistoryPage(1); }}>Xem tất cả</Button>}>
+    {historyError && <Alert type="warning" showIcon title={historyError} />}
+    {historyLoading ? <Skeleton active paragraph={{ rows: 3 }} /> : !historyError && (historyRows.length ? <div className="report-activity-list">{historyRows.map((event) => {
+      const copy = reportActivityCopy(event, users);
+      return <div className="report-activity-row" key={event.id}><span className="report-activity-icon"><HistoryOutlined /></span><div><strong>{copy.title}</strong>{copy.detail && <small>{copy.detail}</small>}</div><time>{dayjs(event.occurred_at).format("DD/MM/YYYY HH:mm")}</time></div>;
+    })}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có thao tác nào từ khi bật nhật ký" />)}
+    {historyExpanded && !historyError && historyTotal > 10 && <div className="report-history-pagination"><Button disabled={historyPage <= 1 || historyLoading} onClick={() => setHistoryPage((page) => page - 1)}>Trước</Button><span>Trang {historyPage} / {Math.ceil(historyTotal / 10)}</span><Button disabled={historyPage * 10 >= historyTotal || historyLoading} onClick={() => setHistoryPage((page) => page + 1)}>Tiếp</Button></div>}
+  </Card>;
+
+  if (costsLoading || roomLoading) return <div className="report-page"><Skeleton active paragraph={{ rows: 10 }} /></div>;
+  return <div className="page-stack report-page">
+    <div className="report-heading"><div><h2>{isAdmin ? "Tổng quan tài chính" : "Báo cáo của tôi"}</h2><p>{isAdmin ? "Tiền phòng, sinh hoạt và các khoản cần đối soát." : "Các khoản phải đóng và đối soát của bạn."}</p></div><Tag color="success">Kỳ tháng {financialPeriodShortLabel(periodStart)}</Tag></div>
+    {!financialPeriod && <Alert type="warning" showIcon title={`Kỳ ${financialPeriodShortLabel(periodStart)} chưa được tạo. Các khoản chưa thể xác nhận thanh toán.`} />}
+    {(roomError || costsError) && <Alert type="error" showIcon title={roomError || costsError} />}
+    <Card className="report-filter-card"><div className="report-filter-fields"><label>Kỳ tài chính<Select value={periodStart} options={periodOptions} onChange={onPeriodChange} /></label>{isAdmin && <label>Phòng<Select value={roomFilter} onChange={(value) => { setRoomFilter(value); setShowAllDue(false); }} options={[{ value: "all", label: "Tất cả phòng" }, ...rooms.map((room) => ({ value: room.id, label: room.code }))]} /></label>}</div><Button icon={<DownloadOutlined />} onClick={exportReport}>Xuất báo cáo</Button></Card>
+    {historyExpanded && isAdmin ? historyCard : <>
+      {!isAdmin && !member ? <Card className="report-section"><Empty description="Tài khoản chưa được liên kết với hồ sơ thành viên" /></Card> : <>
+        <div className="report-kpi-grid">
+          <ReportKpi label={isAdmin ? "Tổng phải đóng" : "Tổng phần của bạn"} value={totalDue} note="Tiền phòng + sinh hoạt" icon={<WalletOutlined />} />
+          <ReportKpi label="Đã xác nhận đóng" value={totalPaid} note="Không phải số dư ngân hàng" icon={<CheckCircleFilled />} />
+          <ReportKpi label={isAdmin ? "Còn chưa đóng" : "Còn phải đóng"} value={totalOpen} note={isAdmin ? `${dueItems.length} khoản cần đối soát` : "Phần tiền còn lại"} icon={<ClockCircleOutlined />} />
+          <ReportKpi label={isAdmin ? "Chi phí sinh hoạt" : "Đã ứng hộ"} value={isAdmin ? expenseTotal : member?.advanced ?? 0} note={isAdmin ? `Kỳ ${financialPeriodShortLabel(periodStart)}` : "Đã trừ khi đối soát"} icon={isAdmin ? <FileTextOutlined /> : <BankOutlined />} />
+        </div>
+        <div className="report-amount-grid">
+          <ReportAmountPanel title="Tiền phòng" note={isAdmin ? (roomFilter === "all" ? "Theo kỳ từng phòng" : rooms.find((room) => room.id === roomFilter)?.code ?? "Theo phòng") : memberRoom ? `${memberRoom} · theo chu kỳ` : "Chưa được xếp phòng"} total={rentTotal} paid={rentPaid} href={roomHref} />
+          <ReportAmountPanel title="Sinh hoạt" note={`Kỳ tháng ${financialPeriodShortLabel(periodStart)}`} total={livingTotal} paid={livingPaid} href={memberExpenseHref} />
+        </div>
+        {isAdmin ? <Card className="report-section report-due-card" title={<div><strong>Khoản cần đối soát</strong><small>{dueItems.length} khoản chưa được xác nhận trong kỳ</small></div>} extra={dueItems.length > 4 && <Button type="link" onClick={() => setShowAllDue((value) => !value)}>{showAllDue ? "Thu gọn" : "Xem tất cả"}</Button>}>
+          {dueItems.length ? <><div className="report-due-table"><table><thead><tr><th>Thành viên</th><th>Phòng</th><th>Loại tiền</th><th>Trạng thái</th><th>Số tiền</th></tr></thead><tbody>{(showAllDue ? dueItems : dueItems.slice(0, 4)).map((item) => <tr key={item.key}><td><Avatar size={30}>{item.memberName.slice(0, 1).toUpperCase()}</Avatar><strong>{item.memberName}</strong></td><td>{item.roomCode}</td><td>{item.kind}</td><td><Tag color="warning">Chưa đóng</Tag></td><td>{vnd.format(item.amount)}</td></tr>)}</tbody></table></div><div className="report-due-mobile">{(showAllDue ? dueItems : dueItems.slice(0, 4)).map((item) => <div key={item.key}><strong>{item.memberName}</strong><b>{vnd.format(item.amount)}</b><small>{item.roomCode} · {item.kind}</small><Tag color="warning">Chưa đóng</Tag></div>)}</div></> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có khoản nào cần đối soát" />}
+        </Card> : <Card className="report-section report-member-detail" title={<div><strong>Chi tiết phần của bạn</strong><small>Phần chia {vnd.format(member?.allocated ?? 0)} − đã ứng {vnd.format(member?.advanced ?? 0)} = còn {vnd.format(Math.max(member?.balance ?? 0, 0))}</small></div>} extra={<a href={memberExpenseHref}>Xem khoản chi</a>}>
+          <div><span>Điện, nước và các khoản chung</span><strong>{vnd.format(member?.allocated ?? 0)}</strong></div>
+          <div><span>Bạn đã ứng hộ</span><strong>−{vnd.format(member?.advanced ?? 0)}</strong></div>
+          <div><b>Còn phải đóng sinh hoạt</b><strong>{vnd.format(Math.max(member?.balance ?? 0, 0))}</strong></div>
+        </Card>}
+        {historyCard}
+      </>}
+    </>}
+  </div>;
 }
 
 type MemberFormValues = { full_name: string; phone?: string; bank_account?: string; bank_name?: string };

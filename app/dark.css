@@ -279,3 +279,9 @@ html.dark {
     border-color: var(--line);
   }
 }
+.dark .report-panel-foot b { color: #f0b86b; }
+.dark .report-filter-card,
+.dark .report-section,
+.dark .report-kpi,
+.dark .report-amount-panel { border-color: var(--line); background: var(--surface); }
+.dark .report-due-table th { background: var(--surface-soft); }
