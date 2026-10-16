@@ -571,10 +571,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
 
       <Layout>
         <Layout.Content className="dashboard-content">
-          <header className="page-header">
-            <Flex align="center" gap={14}>
+          <header className={`page-header${activeTab === "Báo cáo" ? " page-header-report" : ""}`}>
+            <Flex className="header-main" align="center" gap={14}>
               <Button className="mobile-menu-button" icon={<MenuOutlined />} aria-label="Mở menu điều hướng" onClick={() => setMobileMenuOpen(true)} />
-              <div>
+              <div className="header-title-copy">
                 <Flex align="center" gap={8} wrap className="period-header-row">
                   <Typography.Text className="period-label">{periodLabel}</Typography.Text>
                   <Select
@@ -595,7 +595,7 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
                 </Typography.Text>
               </div>
             </Flex>
-            <Space className="header-actions">
+            <div className="header-actions-wrap"><Space className="header-actions">
               <NotificationCenter userId={userId} onNotice={notify} />
               <Dropdown menu={themeMenu} trigger={["click"]} placement="bottomRight">
                 <Button type="text" shape="circle" className="theme-trigger" icon={resolvedTheme === "dark" ? <MoonOutlined /> : <SunOutlined />} aria-label="Chọn giao diện sáng, tối hoặc theo hệ thống" />
@@ -620,6 +620,13 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
                 <Button type="text" shape="circle" className="account-menu-trigger" aria-label="Mở thông tin tài khoản"><Avatar src={avatarUrl || undefined} className="header-avatar">{initials}</Avatar></Button>
               </Dropdown>
             </Space>
+              <SupportFloatingActions
+                organizationId={data.organization_id}
+                propertyId={data.property_id}
+                canManage={false}
+                onNotice={notify}
+              />
+            </div>
           </header>
 
           {error && <Alert className="page-alert" type="error" showIcon title={error} action={<Button size="small" onClick={() => void loadDashboard()}>Thử lại</Button>} />}
@@ -694,12 +701,6 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
         </Form>
       </Modal>
 
-      <SupportFloatingActions
-        organizationId={data.organization_id}
-        propertyId={data.property_id}
-        canManage={false}
-        onNotice={notify}
-      />
     </Layout>
   );
 }

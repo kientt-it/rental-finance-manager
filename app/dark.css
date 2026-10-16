@@ -228,6 +228,19 @@ html.dark {
   background: var(--brand-600);
 }
 
+.dark .notification-item.is-read .notification-item-heading {
+  color: var(--ink-500);
+}
+
+.dark .notification-item-more.ant-btn {
+  color: var(--ink-500);
+}
+
+.dark .notification-item-more.ant-btn:hover {
+  background: rgba(232, 255, 239, 0.12) !important;
+  color: var(--ink-950) !important;
+}
+
 .dark .room-delete-button:hover {
   background: rgba(237, 129, 121, 0.14) !important;
   color: #ed8179 !important;
@@ -285,3 +298,6 @@ html.dark {
 .dark .report-kpi,
 .dark .report-amount-panel { border-color: var(--line); background: var(--surface); }
 .dark .report-due-table th { background: var(--surface-soft); }
+@media (max-width: 767px) {
+  .dark .report-filter-member { border: 0; background: transparent; }
+}

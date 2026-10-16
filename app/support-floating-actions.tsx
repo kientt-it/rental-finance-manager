@@ -13,6 +13,7 @@ import {
   Image,
   Input,
   Modal,
+  Popover,
   Space,
   Typography,
 } from "antd";
@@ -71,6 +72,7 @@ export default function SupportFloatingActions({ organizationId, propertyId, can
   const [settings, setSettings] = useState<SupportSettings>(emptySettings);
   const [reportOpen, setReportOpen] = useState(false);
   const [donateOpen, setDonateOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pendingDonateQr, setPendingDonateQr] = useState<string | null>(null);
@@ -176,6 +178,18 @@ export default function SupportFloatingActions({ organizationId, propertyId, can
 
   return (
     <>
+      <Popover
+        trigger="click"
+        placement="bottomRight"
+        open={mobileMenuOpen}
+        onOpenChange={setMobileMenuOpen}
+        content={<div className="support-mobile-menu">
+          <Button type="text" icon={<WarningOutlined />} onClick={() => { setMobileMenuOpen(false); setReportOpen(true); }}>Báo lỗi / Liên hệ</Button>
+          <Button type="text" icon={<GiftOutlined />} onClick={() => { setMobileMenuOpen(false); setDonateOpen(true); }}>Ủng hộ</Button>
+        </div>}
+      >
+        <Button type="text" shape="circle" className="support-mobile-trigger" icon={<CustomerServiceOutlined />} aria-label="Mở hỗ trợ" />
+      </Popover>
       <FloatButton.Group trigger="click" type="primary" icon={<CustomerServiceOutlined />} className="support-float-group" tooltip="Hỗ trợ">
         <FloatButton icon={<WarningOutlined />} tooltip="Report / Liên hệ" onClick={() => setReportOpen(true)} />
         <FloatButton icon={<GiftOutlined />} tooltip="Donate" onClick={() => setDonateOpen(true)} />

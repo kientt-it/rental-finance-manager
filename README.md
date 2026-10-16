@@ -47,6 +47,9 @@
    - `supabase/migrations/0023_fix_payment_reminder_conflict_target.sql`
    - `supabase/migrations/0024_separate_send_days_and_recipient_audit.sql`
    - `supabase/migrations/0025_disable_overdue_reminders_with_zero.sql`
+   - `supabase/migrations/0026_report_activity_log.sql`
+   - `supabase/migrations/0027_notification_inbox_actions.sql`
+   - `supabase/migrations/0028_monthly_report_activity_cleanup.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 
@@ -71,6 +74,10 @@ Không đưa `service_role` key vào biến môi trường public hoặc mã ph�
 ### Thông báo đến hạn thanh toán
 
 Làm theo [hướng dẫn triển khai thông báo thanh toán](supabase/payment-reminders-setup.md) để cấu hình Gmail API trong Supabase Secrets, triển khai Edge Function và lên lịch chạy miễn phí mỗi ngày. Gmail API không cần tên miền riêng; cần OAuth credentials của một tài khoản Gmail dùng làm người gửi.
+
+### Dọn lịch sử thao tác
+
+Migration `0028_monthly_report_activity_cleanup.sql` tạo job `report-activity-monthly-cleanup` trong Supabase Cron. Job dọn toàn bộ bảng `report_activity_events` lúc 23:55 giờ Việt Nam ngày 30 hằng tháng; tháng 2 chạy vào ngày cuối tháng. Job không xóa chi phí, thanh toán, lịch sử gửi email hoặc thông báo. Cần bật extension `pg_cron` trước khi chạy migration. Trong mục **Integrations → Cron → Jobs**, kiểm tra job này đang hoạt động; có thể xem lần chạy tại `cron.job_run_details`.
 
    Bước phát triển tiếp theo
 

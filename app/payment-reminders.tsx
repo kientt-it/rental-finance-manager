@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
-import { Alert, Badge, Button, Card, Col, DatePicker, Drawer, Empty, Flex, Form, Input, InputNumber, Pagination, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
-import { BellOutlined, CheckOutlined, ClockCircleOutlined, HomeOutlined, MailOutlined, ReloadOutlined, SendOutlined, WalletOutlined } from "@ant-design/icons";
+import { Alert, Badge, Button, Card, Col, DatePicker, Drawer, Dropdown, Empty, Flex, Form, Input, InputNumber, Modal, Pagination, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
+import { BellOutlined, CheckOutlined, ClockCircleOutlined, DeleteOutlined, HomeOutlined, MailOutlined, MoreOutlined, ReloadOutlined, SendOutlined, UndoOutlined, WalletOutlined } from "@ant-design/icons";
 import { createClient } from "@/lib/supabase/browser";
 
 const { TextArea } = Input;
@@ -293,29 +293,68 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<ReminderEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const unreadCount = useMemo(() => events.filter((event) => event.in_app_enabled && !event.read_at).length, [events]);
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await createClient().from("payment_reminder_events").select(fields).eq("auth_user_id", userId).eq("in_app_enabled", true).order("created_at", { ascending: false }).limit(50);
-    setLoading(false);
-    if (error) return onNotice("Không tải được thông báo. Hãy chạy migration 0022_split_rent_and_living_reminders.sql.");
-    setEvents(((data ?? []) as ReminderEvent[]).map((event) => ({ ...event, reminder_scope: event.reminder_scope || "living_expense", amount: Number(event.amount) })));
-  }, [onNotice, userId]);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [visibleLimit, setVisibleLimit] = useState(50);
+  const load = useCallback(async (showLoading = true) => {
+    if (!userId) return;
+    if (showLoading) setLoading(true);
+    const supabase = createClient();
+    const base = () => supabase.from("payment_reminder_events").select(fields, { count: "exact" }).eq("auth_user_id", userId).eq("in_app_enabled", true).is("dismissed_at", null);
+    const [listResult, unreadResult] = await Promise.all([
+      base().order("created_at", { ascending: false }).limit(visibleLimit),
+      supabase.from("payment_reminder_events").select("id", { count: "exact", head: true }).eq("auth_user_id", userId).eq("in_app_enabled", true).is("dismissed_at", null).is("read_at", null),
+    ]);
+    if (showLoading) setLoading(false);
+    if (listResult.error || unreadResult.error) return onNotice("Không tải được thông báo. Hãy chạy migration 0027_notification_inbox_actions.sql.");
+    setEvents(((listResult.data ?? []) as ReminderEvent[]).map((event) => ({ ...event, reminder_scope: event.reminder_scope || "living_expense", amount: Number(event.amount) })));
+    setTotalCount(listResult.count ?? 0);
+    setUnreadCount(unreadResult.count ?? 0);
+  }, [onNotice, userId, visibleLimit]);
   useEffect(() => { void load(); }, [load]);
-  async function markRead(event: ReminderEvent) {
-    if (event.read_at) return;
-    const { error } = await createClient().rpc("mark_payment_reminder_read", { target_event_id: event.id });
-    if (error) return onNotice("Không thể cập nhật trạng thái thông báo.");
-    setEvents((current) => current.map((item) => item.id === event.id ? { ...item, read_at: new Date().toISOString() } : item));
+  async function manageNotification(action: "mark_read" | "mark_unread" | "dismiss" | "mark_all_read" | "mark_all_unread", eventId?: string) {
+    if (pendingAction) return;
+    setPendingAction(eventId ?? action);
+    const { error } = await createClient().rpc("manage_payment_reminder_notification", { action_name: action, target_event_id: eventId ?? null });
+    if (error) {
+      setPendingAction(null);
+      onNotice("Không thể cập nhật thông báo. Hãy kiểm tra migration 0027 và thử lại.");
+      return;
+    }
+    await load(false);
+    setPendingAction(null);
   }
-  async function markAllRead() { for (const event of events.filter((item) => item.in_app_enabled && !item.read_at)) await markRead(event); }
+  function confirmDismiss(event: ReminderEvent) {
+    Modal.confirm({
+      title: "Xóa thông báo?",
+      content: "Thông báo này sẽ không còn xuất hiện trong danh sách của bạn.",
+      okText: "Xóa thông báo",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      onOk: () => manageNotification("dismiss", event.id),
+    });
+  }
   return <>
-    <Badge count={unreadCount} size="small" offset={[-3, 3]}><Button type="text" shape="circle" className="notification-center-trigger" aria-label="Thông báo" onClick={() => setOpen(true)} icon={<BellOutlined />} /></Badge>
-    <Drawer title={<div><Typography.Text strong>Thông báo</Typography.Text><Typography.Text type="secondary" className="notification-drawer-subtitle">{unreadCount} thông báo chưa đọc</Typography.Text></div>} open={open} onClose={() => setOpen(false)} width={440} className="notification-center-drawer" extra={<Button type="link" disabled={!unreadCount} onClick={() => void markAllRead()}><CheckOutlined /> Đọc tất cả</Button>}>
-      <Flex justify="flex-end" className="notification-refresh"><Button type="text" icon={<ReloadOutlined />} onClick={() => void load()}>Tải lại</Button></Flex>
-      {loading ? <div className="notification-loading"><Spin /></div> : events.length ? <div className="notification-list">{events.map((event) => <button type="button" key={event.id} className={"notification-item " + (event.read_at ? "is-read" : "is-unread")} onClick={() => void markRead(event)}>
-        <span className="notification-unread-dot" /><span className="notification-item-main"><span className="notification-item-heading">{reminderLabel(event.reminder_type)}: {event.items}</span><span className="notification-item-description">Kỳ {dayjs(event.period_start).format("MM/YYYY")} · Còn {vnd.format(event.amount)} cần đóng</span><span className="notification-item-meta">Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · {dayjs(event.created_at).format("DD/MM HH:mm")}</span></span>
-      </button>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bạn chưa có thông báo nào" />}
+    <Badge count={unreadCount} size="small" offset={[-3, 3]}><Button type="text" shape="circle" className="notification-center-trigger" aria-label={`Thông báo, ${unreadCount} chưa đọc`} onClick={() => setOpen(true)} icon={<BellOutlined />} /></Badge>
+    <Drawer title={<div><Typography.Text strong>Thông báo</Typography.Text><Typography.Text type="secondary" className="notification-drawer-subtitle">{unreadCount} thông báo chưa đọc</Typography.Text></div>} open={open} onClose={() => setOpen(false)} width={440} className="notification-center-drawer" extra={<Button type="text" icon={<ReloadOutlined />} aria-label="Tải lại thông báo" title="Tải lại" onClick={() => void load()} loading={loading} />}>
+      <div className="notification-bulk-actions">
+        <Button type="text" disabled={!unreadCount || Boolean(pendingAction)} onClick={() => void manageNotification("mark_all_read")} loading={pendingAction === "mark_all_read"}><CheckOutlined /> Đánh dấu tất cả đã đọc</Button>
+        <Button type="text" disabled={totalCount === unreadCount || Boolean(pendingAction)} onClick={() => void manageNotification("mark_all_unread")} loading={pendingAction === "mark_all_unread"}><UndoOutlined /> Đánh dấu tất cả chưa đọc</Button>
+      </div>
+      {loading ? <div className="notification-loading"><Spin /></div> : events.length ? <div className="notification-list">{events.map((event) => <div key={event.id} className={"notification-item " + (event.read_at ? "is-read" : "is-unread")}>
+        <span className="notification-unread-dot" aria-hidden="true" />
+        {event.read_at ? <span className="notification-item-main notification-item-content"><span className="notification-item-heading">{reminderLabel(event.reminder_type)}: {event.items}</span><span className="notification-item-description">Kỳ {dayjs(event.period_start).format("MM/YYYY")} · Còn {vnd.format(event.amount)} cần đóng</span><span className="notification-item-meta">Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · {dayjs(event.created_at).format("DD/MM HH:mm")}</span></span>
+          : <button type="button" className="notification-item-main notification-item-content" disabled={Boolean(pendingAction)} onClick={() => void manageNotification("mark_read", event.id)}><span className="notification-item-heading">{reminderLabel(event.reminder_type)}: {event.items}</span><span className="notification-item-description">Kỳ {dayjs(event.period_start).format("MM/YYYY")} · Còn {vnd.format(event.amount)} cần đóng</span><span className="notification-item-meta">Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · {dayjs(event.created_at).format("DD/MM HH:mm")}</span></button>}
+        <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items: [
+          { key: "toggle", icon: event.read_at ? <UndoOutlined /> : <CheckOutlined />, label: event.read_at ? "Đánh dấu chưa đọc" : "Đánh dấu đã đọc" },
+          { type: "divider" },
+          { key: "dismiss", icon: <DeleteOutlined />, label: "Xóa thông báo", danger: true },
+        ], onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); if (key === "dismiss") confirmDismiss(event); else void manageNotification(event.read_at ? "mark_unread" : "mark_read", event.id); } }}>
+          <Button type="text" className="notification-item-more" icon={<MoreOutlined />} aria-label={`Thao tác với thông báo ${event.items}`} title="Thao tác" disabled={Boolean(pendingAction)} onClick={(clickEvent) => clickEvent.stopPropagation()} />
+        </Dropdown>
+      </div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bạn chưa có thông báo nào" />}
+      {totalCount > events.length && <Button type="text" className="notification-load-more" onClick={() => setVisibleLimit((current) => current + 50)}>Xem thêm thông báo ({events.length}/{totalCount})</Button>}
     </Drawer>
   </>;
 }
