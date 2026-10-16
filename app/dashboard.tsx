@@ -121,8 +121,10 @@ export default function Dashboard({ userId, userEmail, userName, avatarUrl }: { 
   const screens = Grid.useBreakpoint();
   const { message, modal } = App.useApp();
   const { mode: themeMode, resolvedTheme, setMode: setThemeMode } = useAppTheme();
-  const notify = useCallback((content: string) => {
-    message.success({ content });
+  const notify = useCallback((content: string, kind?: "error" | "success") => {
+    const isError = kind === "error" || (!kind && !/^Đã(?:\s|$)/.test(content));
+    if (isError) message.error({ content });
+    else message.success({ content });
   }, [message]);
 
   const loadDashboard = useCallback(async () => {

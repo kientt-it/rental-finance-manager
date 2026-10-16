@@ -50,6 +50,7 @@
    - `supabase/migrations/0026_report_activity_log.sql`
    - `supabase/migrations/0027_notification_inbox_actions.sql`
    - `supabase/migrations/0028_monthly_report_activity_cleanup.sql`
+   - `supabase/migrations/0029_safe_reminder_delivery.sql`
 4. Cài package bằng `npm install`.
 5. Khởi chạy bằng `npm run dev` và mở `http://localhost:3000`.
 

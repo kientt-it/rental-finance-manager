@@ -20,7 +20,7 @@ type ReminderSettings = {
 };
 type ReminderEvent = {
   id: string; member_name: string; recipient_email: string; amount: number; items: string; period_start: string; due_date: string;
-  reminder_type: "before" | "due" | "overdue"; in_app_enabled: boolean; email_status: "pending" | "sent" | "failed" | "skipped";
+  reminder_type: "before" | "due" | "overdue"; in_app_enabled: boolean; email_status: "pending" | "sending" | "sent" | "failed" | "skipped";
   reminder_scope: ReminderEventScope; email_error: string | null; attempt_count: number; read_at: string | null; created_at: string; sent_at: string | null;
 };
 type RecipientAudit = {
@@ -50,6 +50,7 @@ function reminderLabel(type: ReminderEvent["reminder_type"]) { return type === "
 function scopeLabel(scope: ReminderEventScope) { return scope === "rent" ? "Tiền phòng" : scope === "legacy_combined" ? "Email gộp cũ" : "Chi phí sinh hoạt"; }
 function statusTag(status: ReminderEvent["email_status"]) {
   if (status === "sent") return <Tag color="success">Đã gửi</Tag>;
+  if (status === "sending") return <Tag color="warning">Cần kiểm tra</Tag>;
   if (status === "failed") return <Tag color="error">Gửi lỗi</Tag>;
   if (status === "pending") return <Tag color="processing">Đang chờ</Tag>;
   return <Tag>Không gửi email</Tag>;
@@ -77,7 +78,7 @@ async function functionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Không gửi được email thử. Hãy kiểm tra cấu hình Gmail API trong Supabase.";
 }
 
-export function PaymentReminderSettings({ organizationId, propertyId, onNotice, onRentCyclesChanged }: { organizationId: string; propertyId: string; onNotice: (message: string) => void; onRentCyclesChanged?: () => void }) {
+export function PaymentReminderSettings({ organizationId, propertyId, onNotice, onRentCyclesChanged }: { organizationId: string; propertyId: string; onNotice: (message: string, kind?: "error" | "success") => void; onRentCyclesChanged?: () => void }) {
   const [settings, setSettings] = useState(() => defaults(organizationId, propertyId));
   const [events, setEvents] = useState<ReminderEvent[]>([]);
   const [recipientAudit, setRecipientAudit] = useState<RecipientAudit[]>([]);
@@ -105,7 +106,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
       supabase.from("rooms").select("id, code, base_rent, rent_billing_cycle_months, rent_cycle_start_month").eq("property_id", propertyId).order("code"),
       supabase.rpc("get_payment_reminder_recipient_audit", { target_property_id: propertyId }),
     ]);
-    if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình hoặc lịch sử nhắc hạn. Hãy kiểm tra quyền quản trị và migration 0024.");
+    if (settingResult.error || historyResult.error) onNotice("Không tải được cấu hình hoặc lịch sử nhắc hạn. Hãy kiểm tra quyền quản trị và migration 0024.", "error");
     if (roomResult.error) onNotice("Không tải được chu kỳ tiền phòng. Hãy kiểm tra migration 0021_room_rent_billing_cycles.sql.");
     setAuditError(Boolean(auditResult.error));
     setHistoryError(Boolean(historyResult.error));
@@ -145,8 +146,8 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
     setTestingScope(scope);
     const { data, error } = await createClient().functions.invoke("payment-reminders", { body: { action: "test", reminder_scope: scope, property_id: propertyId, test_recipient_email: recipient } });
     setTestingScope(null);
-    if (error) return onNotice(await functionErrorMessage(error));
-    if (data?.error) return onNotice(data.error);
+    if (error) return onNotice(await functionErrorMessage(error), "error");
+    if (data?.error) return onNotice(data.error, "error");
     onNotice(`Đã gửi thử email ${scopeLabel(scope).toLowerCase()} đến ${recipient}.`);
   }
   async function saveRentCycle(room: RentCycleRoom) {
@@ -275,11 +276,11 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
         </Card>
         <Card size="small" title="Lịch sử gửi gần đây" extra={<Button type="link" onClick={() => void load()}>Tải lại</Button>} className="reminder-history-card">
           {historyError ? <Alert type="error" showIcon message="Không tải được lịch sử gửi" description="Kiểm tra quyền quản trị và kết nối Supabase, rồi bấm Tải lại." /> : <>
-          <div className="reminder-history-filters"><Select aria-label="Lọc lịch sử theo loại" value={historyScope} onChange={(value) => { setHistoryScope(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả loại" }, { value: "living_expense", label: "Sinh hoạt" }, { value: "rent", label: "Tiền phòng" }]} /><Select aria-label="Lọc lịch sử theo trạng thái" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "sent", label: "Đã gửi" }, { value: "failed", label: "Gửi lỗi" }, { value: "pending", label: "Đang chờ" }, { value: "skipped", label: "Không gửi email" }]} /><Typography.Text type="secondary">{filteredHistory.length} kết quả trong 200 lần gần nhất</Typography.Text></div>
+          <div className="reminder-history-filters"><Select aria-label="Lọc lịch sử theo loại" value={historyScope} onChange={(value) => { setHistoryScope(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả loại" }, { value: "living_expense", label: "Sinh hoạt" }, { value: "rent", label: "Tiền phòng" }]} /><Select aria-label="Lọc lịch sử theo trạng thái" value={historyStatus} onChange={(value) => { setHistoryStatus(value); setHistoryPage(1); }} options={[{ value: "all", label: "Tất cả trạng thái" }, { value: "sent", label: "Đã gửi" }, { value: "sending", label: "Cần kiểm tra" }, { value: "failed", label: "Gửi lỗi" }, { value: "pending", label: "Đang chờ" }, { value: "skipped", label: "Không gửi email" }]} /><Typography.Text type="secondary">{filteredHistory.length} kết quả trong 200 lần gần nhất</Typography.Text></div>
           {historyPageRows.length ? <div className="reminder-history-list">{historyPageRows.map((event) => <div className="reminder-history-row" key={event.id}>
-            <div className="reminder-history-person"><Typography.Text strong>{event.member_name}</Typography.Text><Typography.Text type="secondary">{event.recipient_email}</Typography.Text></div>
+            <div className="reminder-history-person"><Typography.Text strong>{event.member_name}</Typography.Text><Typography.Text type="secondary">{event.recipient_email || "Chưa có email · chỉ thông báo trong ứng dụng"}</Typography.Text></div>
             <div className="reminder-history-info"><Typography.Text>{event.items} · {vnd.format(event.amount)}</Typography.Text><Typography.Text type="secondary"><Tag>{scopeLabel(event.reminder_scope)}</Tag>{reminderLabel(event.reminder_type)} · Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · Tạo {dayjs(event.created_at).format("DD/MM HH:mm")}</Typography.Text></div>
-            <div>{statusTag(event.email_status)}{event.email_status === "failed" && <Typography.Text type="secondary" className="reminder-history-error">Đã thử {event.attempt_count}/3 lần</Typography.Text>}{event.email_error && <Typography.Text type="danger" className="reminder-history-error">{event.email_error}</Typography.Text>}</div>
+            <div>{statusTag(event.email_status)}{event.email_status === "failed" && <Typography.Text type="secondary" className="reminder-history-error">Đã thử {event.attempt_count}/3 lần</Typography.Text>}{event.email_status === "sending" && <Typography.Text type="secondary" className="reminder-history-error">Không tự gửi lại để tránh trùng email</Typography.Text>}{event.email_error && <Typography.Text type="danger" className="reminder-history-error">{event.email_error}</Typography.Text>}</div>
           </div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có lần gửi nào khớp bộ lọc" />}
           {filteredHistory.length > 20 && <Pagination className="reminder-history-pagination" current={historyPage} pageSize={20} total={filteredHistory.length} showSizeChanger={false} onChange={setHistoryPage} />}
           </>}
@@ -289,7 +290,7 @@ export function PaymentReminderSettings({ organizationId, propertyId, onNotice, 
   </div>;
 }
 
-export function NotificationCenter({ userId, onNotice }: { userId: string; onNotice: (message: string) => void }) {
+export function NotificationCenter({ userId, onNotice }: { userId: string; onNotice: (message: string, kind?: "error" | "success") => void }) {
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<ReminderEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -307,7 +308,7 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
       supabase.from("payment_reminder_events").select("id", { count: "exact", head: true }).eq("auth_user_id", userId).eq("in_app_enabled", true).is("dismissed_at", null).is("read_at", null),
     ]);
     if (showLoading) setLoading(false);
-    if (listResult.error || unreadResult.error) return onNotice("Không tải được thông báo. Hãy chạy migration 0027_notification_inbox_actions.sql.");
+    if (listResult.error || unreadResult.error) return onNotice("Không tải được thông báo. Hãy chạy migration 0027_notification_inbox_actions.sql.", "error");
     setEvents(((listResult.data ?? []) as ReminderEvent[]).map((event) => ({ ...event, reminder_scope: event.reminder_scope || "living_expense", amount: Number(event.amount) })));
     setTotalCount(listResult.count ?? 0);
     setUnreadCount(unreadResult.count ?? 0);
@@ -319,7 +320,7 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
     const { error } = await createClient().rpc("manage_payment_reminder_notification", { action_name: action, target_event_id: eventId ?? null });
     if (error) {
       setPendingAction(null);
-      onNotice("Không thể cập nhật thông báo. Hãy kiểm tra migration 0027 và thử lại.");
+      onNotice("Không thể cập nhật thông báo. Hãy kiểm tra migration 0027 và thử lại.", "error");
       return;
     }
     await load(false);
@@ -336,7 +337,7 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
     });
   }
   return <>
-    <Badge count={unreadCount} size="small" offset={[-3, 3]}><Button type="text" shape="circle" className="notification-center-trigger" aria-label={`Thông báo, ${unreadCount} chưa đọc`} onClick={() => setOpen(true)} icon={<BellOutlined />} /></Badge>
+    <Badge count={unreadCount} size="small" offset={[-3, 3]}><Button type="text" shape="circle" className="notification-center-trigger" aria-label={`Thông báo, ${unreadCount} chưa đọc`} onClick={() => { setOpen(true); void load(); }} icon={<BellOutlined />} /></Badge>
     <Drawer title={<div><Typography.Text strong>Thông báo</Typography.Text><Typography.Text type="secondary" className="notification-drawer-subtitle">{unreadCount} thông báo chưa đọc</Typography.Text></div>} open={open} onClose={() => setOpen(false)} width={440} className="notification-center-drawer" extra={<Button type="text" icon={<ReloadOutlined />} aria-label="Tải lại thông báo" title="Tải lại" onClick={() => void load()} loading={loading} />}>
       <div className="notification-bulk-actions">
         <Button type="text" disabled={!unreadCount || Boolean(pendingAction)} onClick={() => void manageNotification("mark_all_read")} loading={pendingAction === "mark_all_read"}><CheckOutlined /> Đánh dấu tất cả đã đọc</Button>

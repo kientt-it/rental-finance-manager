@@ -59,7 +59,7 @@ function base64Utf8(value: string) {
 }
 function encodedHeader(value: string) { return "=?UTF-8?B?" + base64Utf8(value.replace(/[\r\n]+/g, " ")) + "?="; }
 function validEmail(value: string) { return /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(value); }
-async function sendEmail(settings: Settings, to: string, subjectTemplate: string, bodyTemplate: string, row: { member_name: string; items: string; period_start: string; amount: number; due_date: string }) {
+async function sendEmail(settings: Settings, to: string, subjectTemplate: string, bodyTemplate: string, row: { member_name: string; items: string; period_start: string; amount: number; due_date: string }, onDispatch?: () => void) {
   if (!settings.sender_email || !settings.sender_name) throw new Error("Chưa cấu hình tên và email người gửi.");
   const senderEmail = Deno.env.get("GMAIL_SENDER_EMAIL");
   if (!senderEmail || !validEmail(senderEmail)) throw new Error("Chưa cấu hình GMAIL_SENDER_EMAIL hợp lệ trong Supabase Edge Function Secrets.");
@@ -82,9 +82,11 @@ async function sendEmail(settings: Settings, to: string, subjectTemplate: string
     contentBase64,
   ].join("\r\n");
   const raw = btoa(mime).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const accessToken = await gmailAccessToken();
+  onDispatch?.();
   const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
-    headers: { Authorization: "Bearer " + await gmailAccessToken(), "Content-Type": "application/json" },
+    headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json" },
     body: JSON.stringify({ raw }),
   });
   const result = await response.json().catch(() => ({})) as { error?: { message?: string }; id?: string };
@@ -146,7 +148,7 @@ Deno.serve(async (request) => {
     member_id: row.member_id, auth_user_id: row.auth_user_id, member_name: row.member_name, recipient_email: row.recipient_email,
     amount: Math.round(Number(row.amount)), items: row.items, reminder_type: row.reminder_type, in_app_enabled: row.in_app_enabled,
     reminder_scope: row.reminder_scope,
-    email_status: row.email_enabled ? "pending" : "skipped",
+    email_status: row.email_enabled && validEmail(row.recipient_email) && !row.recipient_email.endsWith("@users.708.local") ? "pending" : "skipped",
   }));
   if (eventRows.length) {
     const { error: insertError } = await service.from("payment_reminder_events").upsert(eventRows, { onConflict: "property_id,member_id,period_start,due_date,reminder_type,reminder_scope", ignoreDuplicates: true });
@@ -157,33 +159,62 @@ Deno.serve(async (request) => {
   const settingsByProperty = new Map(((settingsRows ?? []) as Settings[]).map((setting) => [setting.property_id, setting]));
   const { data: retryRows, error: retryError } = await service.from("payment_reminder_events").select("*").in("email_status", ["pending", "failed"]).lt("attempt_count", 3).order("created_at").limit(100);
   if (retryError) return json(500, { error: retryError.message });
-  let sent = 0; let failed = 0; let skipped = 0;
+  let sent = 0; let failed = 0; let skipped = 0; let needsReview = 0;
   for (const event of (retryRows ?? []) as Event[]) {
     const setting = settingsByProperty.get(event.property_id);
-    if (event.reminder_scope === "legacy_combined") { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
+    if (event.reminder_scope === "legacy_combined") {
+      const { error } = await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id);
+      if (error) return json(500, { error: error.message, sent, failed, skipped });
+      skipped++; continue;
+    }
     const scopeEnabled = event.reminder_scope === "rent"
       ? Boolean(setting?.rent_enabled && setting?.rent_email_enabled)
       : Boolean(setting?.enabled && setting?.email_enabled);
     const overdueDisabled = event.reminder_type === "overdue" && (event.reminder_scope === "rent"
       ? Number(setting?.rent_reminder_after_days) === 0
       : Number(setting?.reminder_after_days) === 0);
-    if (!setting || !scopeEnabled || overdueDisabled) { await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id); skipped++; continue; }
-    const attempt = Number(event.attempt_count) + 1;
+    if (!setting || !scopeEnabled || overdueDisabled) {
+      const { error } = await service.from("payment_reminder_events").update({ email_status: "skipped", email_error: null }).eq("id", event.id);
+      if (error) return json(500, { error: error.message, sent, failed, skipped });
+      skipped++; continue;
+    }
+    const { data: claimed, error: claimError } = await service.rpc("claim_payment_reminder_email", { target_event_id: event.id });
+    if (claimError) return json(500, { error: claimError.message, sent, failed, skipped });
+    if (!claimed) { skipped++; continue; }
+    const currentEvent = claimed as Event;
+    let dispatchStarted = false;
+    let gmailMessageId: string | null = null;
     try {
-      await sendEmail(
+      const result = await sendEmail(
         setting,
-        event.recipient_email,
-        event.reminder_scope === "rent" ? setting.rent_email_subject_template : setting.email_subject_template,
-        event.reminder_scope === "rent" ? setting.rent_email_body_template : setting.email_body_template,
-        event,
+        currentEvent.recipient_email,
+        currentEvent.reminder_scope === "rent" ? setting.rent_email_subject_template : setting.email_subject_template,
+        currentEvent.reminder_scope === "rent" ? setting.rent_email_body_template : setting.email_body_template,
+        currentEvent,
+        () => { dispatchStarted = true; },
       );
-      await service.from("payment_reminder_events").update({ email_status: "sent", email_error: null, attempt_count: attempt, sent_at: new Date().toISOString() }).eq("id", event.id);
-      sent++;
+      gmailMessageId = result.id ?? null;
     } catch (error) {
       const message = (error instanceof Error ? error.message : "Gửi email thất bại.").slice(0, 500);
-      await service.from("payment_reminder_events").update({ email_status: "failed", email_error: message, attempt_count: attempt }).eq("id", event.id);
-      failed++;
+      // Once a request reaches Gmail, its outcome may be ambiguous. Never auto-retry it.
+      const status = dispatchStarted ? "sending" : "failed";
+      const { data: savedFailure, error: saveError } = await service.from("payment_reminder_events")
+        .update({ email_status: status, email_error: message }).eq("id", event.id).eq("email_status", "sending").select("id").maybeSingle();
+      if (saveError || !savedFailure) return json(500, { error: saveError?.message || "Không lưu được trạng thái gửi email.", sent, failed, skipped, needs_review: needsReview + 1 });
+      if (dispatchStarted) needsReview++; else failed++;
+      continue;
     }
+    const { data: saved, error: saveError } = await service.from("payment_reminder_events")
+      .update({ email_status: "sent", email_error: null, gmail_message_id: gmailMessageId, sent_at: new Date().toISOString() })
+      .eq("id", event.id).eq("email_status", "sending").select("id").maybeSingle();
+    if (saveError || !saved) {
+      // The claim remains 'sending': a subsequent cron must not duplicate this email.
+      console.error("Reminder delivery needs reconciliation", { event_id: event.id, error: saveError?.message || "No row updated" });
+      needsReview++;
+      continue;
+    }
+    sent++;
   }
-  return json(200, { ok: true, candidates: rows.length, sent, failed, skipped });
+  const ok = failed === 0 && needsReview === 0;
+  return json(ok ? 200 : 500, { ok, candidates: rows.length, sent, failed, skipped, needs_review: needsReview });
 });
