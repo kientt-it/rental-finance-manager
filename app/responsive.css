@@ -1424,3 +1424,42 @@ body {
   }
 
 }
+
+/* The report's mobile cards must stay inside the available content width. */
+@media (max-width: 767px) {
+  .report-page,
+  .report-page > *,
+  .report-page .ant-card,
+  .report-page .ant-card-body,
+  .report-kpi-grid,
+  .report-amount-grid,
+  .report-due-mobile,
+  .report-activity-list,
+  .report-activity-row { min-width: 0; max-width: 100%; }
+
+  .report-section .ant-card-head-title { min-width: 0; white-space: normal; }
+  .report-section .ant-card-head-title > div { min-width: 0; }
+  .report-section .ant-card-head-title small { line-height: 1.4; overflow-wrap: anywhere; }
+  .report-section .ant-card-extra { flex: 0 0 auto; margin-inline-start: 8px; }
+
+  .report-panel-meta,
+  .report-panel-foot { min-width: 0; align-items: flex-start; }
+  .report-panel-meta > *,
+  .report-panel-foot > * { min-width: 0; }
+  .report-panel-meta b,
+  .report-panel-foot b { overflow-wrap: anywhere; }
+
+  .report-due-mobile > div { min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(0, auto); }
+  .report-due-mobile > div > * { min-width: 0; }
+  .report-due-mobile b { text-align: right; overflow-wrap: anywhere; }
+  .report-due-mobile .ant-tag { max-width: 100%; white-space: normal; text-align: right; }
+
+  .report-activity-row > * { min-width: 0; }
+  .report-activity-row time { white-space: normal; }
+}
+
+@media (max-width: 420px) {
+  .report-kpi-grid { grid-template-columns: minmax(0, 1fr); }
+  .report-kpi { min-height: 92px; padding-right: 46px; }
+  .report-kpi-label { padding-right: 0; }
+}

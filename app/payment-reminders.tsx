@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { Alert, Badge, Button, Card, Col, DatePicker, Drawer, Dropdown, Empty, Flex, Form, Input, InputNumber, Modal, Pagination, Row, Select, Skeleton, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
 import { BellOutlined, CheckOutlined, ClockCircleOutlined, DeleteOutlined, HomeOutlined, MailOutlined, MoreOutlined, ReloadOutlined, SendOutlined, UndoOutlined, WalletOutlined } from "@ant-design/icons";
@@ -295,9 +295,11 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
   const [events, setEvents] = useState<ReminderEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [openMenuEventId, setOpenMenuEventId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [visibleLimit, setVisibleLimit] = useState(50);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const load = useCallback(async (showLoading = true) => {
     if (!userId) return;
     if (showLoading) setLoading(true);
@@ -314,7 +316,7 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
     setUnreadCount(unreadResult.count ?? 0);
   }, [onNotice, userId, visibleLimit]);
   useEffect(() => { void load(); }, [load]);
-  async function manageNotification(action: "mark_read" | "mark_unread" | "dismiss" | "mark_all_read" | "mark_all_unread", eventId?: string) {
+  async function manageNotification(action: "mark_read" | "mark_unread" | "dismiss", eventId: string) {
     if (pendingAction) return;
     setPendingAction(eventId ?? action);
     const { error } = await createClient().rpc("manage_payment_reminder_notification", { action_name: action, target_event_id: eventId ?? null });
@@ -327,6 +329,7 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
     setPendingAction(null);
   }
   function confirmDismiss(event: ReminderEvent) {
+    setOpenMenuEventId(null);
     Modal.confirm({
       title: "Xóa thông báo?",
       content: "Thông báo này sẽ không còn xuất hiện trong danh sách của bạn.",
@@ -336,18 +339,41 @@ export function NotificationCenter({ userId, onNotice }: { userId: string; onNot
       onOk: () => manageNotification("dismiss", event.id),
     });
   }
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    const touch = event.touches[0];
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+  }
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>, item: ReminderEvent) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch || pendingAction) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 56 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+    event.preventDefault();
+    if (deltaX > 0) {
+      setOpenMenuEventId(null);
+      if (!item.read_at) void manageNotification("mark_read", item.id);
+    } else {
+      setOpenMenuEventId(item.id);
+    }
+  }
+  function notificationContent(item: ReminderEvent) {
+    return <>
+      <span className="notification-item-heading">{!item.read_at && <span className="notification-unread-label">Chưa đọc · </span>}{reminderLabel(item.reminder_type)}: {item.items}</span>
+      <span className="notification-item-description">Kỳ {dayjs(item.period_start).format("MM/YYYY")} · Còn {vnd.format(item.amount)} cần đóng</span>
+      <span className="notification-item-meta">Hạn {dayjs(item.due_date).format("DD/MM/YYYY")} · {dayjs(item.created_at).format("DD/MM HH:mm")}</span>
+    </>;
+  }
   return <>
     <Badge count={unreadCount} size="small" offset={[-3, 3]}><Button type="text" shape="circle" className="notification-center-trigger" aria-label={`Thông báo, ${unreadCount} chưa đọc`} onClick={() => { setOpen(true); void load(); }} icon={<BellOutlined />} /></Badge>
-    <Drawer title={<div><Typography.Text strong>Thông báo</Typography.Text><Typography.Text type="secondary" className="notification-drawer-subtitle">{unreadCount} thông báo chưa đọc</Typography.Text></div>} open={open} onClose={() => setOpen(false)} width={440} className="notification-center-drawer" extra={<Button type="text" icon={<ReloadOutlined />} aria-label="Tải lại thông báo" title="Tải lại" onClick={() => void load()} loading={loading} />}>
-      <div className="notification-bulk-actions">
-        <Button type="text" disabled={!unreadCount || Boolean(pendingAction)} onClick={() => void manageNotification("mark_all_read")} loading={pendingAction === "mark_all_read"}><CheckOutlined /> Đánh dấu tất cả đã đọc</Button>
-        <Button type="text" disabled={totalCount === unreadCount || Boolean(pendingAction)} onClick={() => void manageNotification("mark_all_unread")} loading={pendingAction === "mark_all_unread"}><UndoOutlined /> Đánh dấu tất cả chưa đọc</Button>
-      </div>
-      {loading ? <div className="notification-loading"><Spin /></div> : events.length ? <div className="notification-list">{events.map((event) => <div key={event.id} className={"notification-item " + (event.read_at ? "is-read" : "is-unread")}>
+    <Drawer title={<div><Typography.Text strong>Thông báo</Typography.Text><Typography.Text type="secondary" className="notification-drawer-subtitle">{unreadCount} thông báo chưa đọc</Typography.Text><Typography.Text type="secondary" className="notification-swipe-hint">Vuốt phải để đọc · vuốt trái để xem tùy chọn</Typography.Text></div>} open={open} onClose={() => setOpen(false)} width={440} className="notification-center-drawer" extra={<Button type="text" icon={<ReloadOutlined />} aria-label="Tải lại thông báo" title="Tải lại" onClick={() => void load()} loading={loading} />}>
+      {loading ? <div className="notification-loading"><Spin /></div> : events.length ? <div className="notification-list">{events.map((event) => <div key={event.id} onTouchStart={handleTouchStart} onTouchEnd={(touchEvent) => handleTouchEnd(touchEvent, event)} className={"notification-item " + (event.read_at ? "is-read" : "is-unread")}>
         <span className="notification-unread-dot" aria-hidden="true" />
-        {event.read_at ? <span className="notification-item-main notification-item-content"><span className="notification-item-heading">{reminderLabel(event.reminder_type)}: {event.items}</span><span className="notification-item-description">Kỳ {dayjs(event.period_start).format("MM/YYYY")} · Còn {vnd.format(event.amount)} cần đóng</span><span className="notification-item-meta">Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · {dayjs(event.created_at).format("DD/MM HH:mm")}</span></span>
-          : <button type="button" className="notification-item-main notification-item-content" disabled={Boolean(pendingAction)} onClick={() => void manageNotification("mark_read", event.id)}><span className="notification-item-heading">{reminderLabel(event.reminder_type)}: {event.items}</span><span className="notification-item-description">Kỳ {dayjs(event.period_start).format("MM/YYYY")} · Còn {vnd.format(event.amount)} cần đóng</span><span className="notification-item-meta">Hạn {dayjs(event.due_date).format("DD/MM/YYYY")} · {dayjs(event.created_at).format("DD/MM HH:mm")}</span></button>}
-        <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items: [
+        {event.read_at ? <span className="notification-item-main notification-item-content">{notificationContent(event)}</span>
+          : <button type="button" className="notification-item-main notification-item-content" disabled={Boolean(pendingAction)} onClick={() => void manageNotification("mark_read", event.id)}>{notificationContent(event)}</button>}
+        <Dropdown trigger={["click"]} placement="bottomRight" open={openMenuEventId === event.id} onOpenChange={(visible) => setOpenMenuEventId(visible ? event.id : null)} menu={{ items: [
           { key: "toggle", icon: event.read_at ? <UndoOutlined /> : <CheckOutlined />, label: event.read_at ? "Đánh dấu chưa đọc" : "Đánh dấu đã đọc" },
           { type: "divider" },
           { key: "dismiss", icon: <DeleteOutlined />, label: "Xóa thông báo", danger: true },

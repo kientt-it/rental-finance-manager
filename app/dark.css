@@ -232,6 +232,19 @@ html.dark {
   color: var(--ink-500);
 }
 
+.dark .notification-item.is-unread {
+  border-left-color: #62c99a;
+  background: rgba(98, 201, 154, 0.12);
+}
+
+.dark .notification-item.is-unread:hover {
+  background: rgba(98, 201, 154, 0.18) !important;
+}
+
+.dark .notification-unread-label {
+  color: #80dfb1;
+}
+
 .dark .notification-item-more.ant-btn {
   color: var(--ink-500);
 }

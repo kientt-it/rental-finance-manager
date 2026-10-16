@@ -2295,16 +2295,8 @@ select {
   margin-top: 2px;
   font-size: 12px;
 }
+.notification-swipe-hint { display: none; margin-top: 2px; font-size: 11px; }
 
-.notification-bulk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin: -8px 0 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-.notification-bulk-actions .ant-btn { min-height: 36px; height: auto; padding: 6px 8px; white-space: normal; text-align: left; }
 .notification-loading { display: grid; min-height: 220px; place-items: center; }
 .notification-list { display: grid; }
 
@@ -2316,12 +2308,15 @@ select {
   gap: 10px;
   padding: 10px 4px 10px 10px;
   border-bottom: 1px solid #e6ece8;
+  border-left: 3px solid transparent;
   background: transparent;
   color: #18382c;
   text-align: left;
 }
 
 .notification-item:hover { background: #f5f8f6; }
+.notification-item.is-unread { border-left-color: #16845f; background: rgba(22, 132, 95, 0.08); }
+.notification-item.is-unread:hover { background: rgba(22, 132, 95, 0.13); }
 .notification-unread-dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: #0f6d4b; }
 .notification-item.is-read .notification-unread-dot { background: transparent; }
 .notification-item-main, .notification-item-heading, .notification-item-description, .notification-item-meta { display: block; }
@@ -2329,6 +2324,7 @@ select {
 button.notification-item-content { width: 100%; cursor: pointer; }
 button.notification-item-content:disabled { cursor: default; }
 .notification-item-heading { font-weight: 700; }
+.notification-unread-label { color: #087a54; }
 .notification-item.is-read .notification-item-heading { color: var(--ink-500); font-weight: 500; }
 .notification-item-description { margin-top: 4px; }
 .notification-item-meta { margin-top: 5px; color: #607169; font-size: 12px; }
@@ -2337,7 +2333,8 @@ button.notification-item-content:disabled { cursor: default; }
 .notification-load-more.ant-btn { display: block; width: 100%; height: 40px; margin-top: 8px; }
 
 @media (max-width: 480px) {
-  .notification-bulk-actions .ant-btn { flex: 1 1 140px; justify-content: flex-start; }
+  .notification-item { touch-action: pan-y; }
+  .notification-swipe-hint { display: block; }
 }
 
 .payment-reminder-settings .reminder-free-note { margin-bottom: 16px; }
